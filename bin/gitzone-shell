@@ -1,0 +1,49 @@
+#!/bin/sh
+
+# only repo allowed for git  pull/push
+repo='zones'
+# allow ssh key add/del/list commands
+allow_key_management=1
+
+# paths
+git_shell=/usr/bin/git-shell
+gitzone=/usr/bin/gitzone
+config=/etc/gitzone.conf
+grep=grep
+
+function error {
+  echo "fatal: What do you think I am? A shell?"
+  exit 128
+}
+
+if [ "$1" != "-c" ]; then error; fi
+cmd=$2
+
+if [[ "$cmd" == git-upload-pack* ]]; then
+  $git_shell -c "git-upload-pack '$repo'"
+elif [[ "$cmd" == git-receive-pack* ]]; then
+  $git_shell -c "git-receive-pack '$repo'"
+elif [[ "$cmd" == update-record* ]]; then
+  $gitzone $config update-record "$cmd"
+elif [ "$allow_key_management" == 1 ]; then
+  if [ "$cmd" == list-keys ]; then
+    cat .ssh/authorized_keys
+  elif [[ "$cmd" == add-key* ]]; then
+    key="${cmd:8}"
+    if [[ "$key" =~ ^ssh-(rsa|dss)\ [a-zA-Z0-9/+]+=*\ [a-zA-Z0-9_.]+@[a-zA-Z0-9.-]+$ ]]; then
+      echo "$key" >> .ssh/authorized_keys && \
+        echo "key added"
+    else
+      echo "invalid key"
+    fi
+  elif [[ "$cmd" == del-key* ]]; then
+    key="${cmd:8}"
+    $grep -v "$key" .ssh/authorized_keys > .ssh/authorized_keys-new && \
+      mv .ssh/authorized_keys-new .ssh/authorized_keys && \
+      echo "key deleted"
+  else
+    error
+  fi
+else
+  error
+fi

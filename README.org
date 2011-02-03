@@ -1,0 +1,3 @@
+% git init zones
+% cd zones
+% git config receive.denyCurrentBranch ignore

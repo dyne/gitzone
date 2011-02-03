@@ -1,0 +1,277 @@
+#!/usr/bin/env perl
+#
+# gitzone by tg
+#
+# this program should be called from a pre-receive hook, it receives
+# <old-value> SP <new-value> SP <ref-name> LF
+# on STDIN for each branch, the push is rejected if the exit code is non-zero
+#
+# changed files are validated with named-checkzone and the push is rejected
+# if there's an error in the zones specified in the config file ($ARGV[0]),
+# if everything is OK, the zone files are copied to $zone_dir and the zone is
+# reloaded with rndc reload
+
+use warnings;
+use strict;
+use POSIX qw/strftime/;
+use Cwd qw/cwd realpath/;
+use File::Basename qw/basename dirname/;
+
+our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $max_depth, $zones, $verbosity);
+our $user = getpwuid $<;
+
+my $config_file = $ARGV[0] or die "Usage: gitzone /path/to/gitzone.conf\n";
+do $config_file or die "Can't load config: $!\n";
+
+my $lock_file = realpath '.gitzone-lock';
+my $list_file = realpath '.gitzone-list';
+my (%files, %inc_files, @zones, $date);
+delete $ENV{GIT_DIR};
+
+!-e $lock_file or die "Error: lock file exists\n";
+open FILE, '>', $lock_file or die $!; close FILE;
+
+sub cleanup { unlink $lock_file }
+sub clean_exit { cleanup; exit shift }
+$SIG{__DIE__} = \&cleanup;
+
+$_ = $ARGV[1];
+/^pre-receive$/ && pre_receive() || /^post-receive$/ && post_receive() || /^update-record$/ && update_record($ARGV[2]);
+cleanup;
+
+sub git {
+  my ($args, $print, $ret) = @_;
+  $ret ||=0;
+  print "% git $args\n" if $verbosity >= 2;
+  $_ = `$git $args 2>&1`;
+  $print = 1 if !defined $print && $verbosity >= 1;
+  if ($print) {
+    #my $cwd = cwd; s/$cwd//g; # print relative paths
+    print;
+  }
+  die if $ret >= 0 && $? >> 8 != $ret;
+  return $_;
+}
+
+sub process_files {
+  $files{$_} = 0 for (@_);
+  $files{$_} += process_file($_) for keys %files;
+  find_inc_by($_) for keys %inc_files;
+  check_zones();
+}
+
+sub process_file {
+  my $f = shift; # filename
+  my (@newfile, $changed, @inc_by);
+  print ">> process_file($f)\n" if $verbosity >= 3;
+
+  return 0 if $files{$f}; # already processed
+  return -1 unless -f $f; # deleted
+
+  open FILE, '<', $f or die $!;
+  my $n = 0;
+  while (<FILE>) {
+    $n++;
+    my $line = $_;
+    if (/^(.*)(\b\d+\b)(.*?;AUTO_INCREMENT\b.*)$/) {
+      # increment serial where marked with ;AUTO_INCREMENT
+      # if length of serial is 8 and starts with 20 treat it as a date
+      my ($a,$s,$z) = ($1,int $2,$3);
+      $date ||= strftime '%Y%m%d', localtime;
+      $s = ($s =~ /^$date/ || $s < 20000000 || $s >= 21000000) ? $s + 1 : $date.'00';
+      $line = "$a$s$z\n";
+      $changed = 1;
+    } elsif (/^(\W*\$INCLUDE\W+)(\S+)(.*)$/) {
+      # check $INCLUDE lines for files outside the user dir
+      my ($a,$file,$z) = ($1,$2,$3);
+      unless ($file =~ m,^$user/, && $file !~ /\.\./) {
+        close FILE;
+        die "Error in $f:$n: invalid included file name, it should start with: $user/\n";
+      }
+    } else {
+      if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
+        # add files listed after ;INCLUDED_BY to %inc_files
+        @inc_by = split /\s+/, $1;
+        for (@inc_by) {
+          $inc_files{$_} = 0 unless exists $files{$_};
+        }
+      }
+    }
+    push @newfile, $line;
+  }
+  close FILE;
+
+  if ($changed) {
+    open FILE, '>', $f or die $!;
+    print FILE for @newfile;
+    close FILE;
+
+    my $fesc = $f;
+    $fesc =~ s/'/'\\''/g;
+    git "commit -m 'auto increment: $fesc' '$fesc'", 1;
+  }
+
+  return 1;
+}
+
+sub find_inc_by {
+  my $f = shift; # filename
+  my $d = shift || 1; # recursion depth
+  my @inc_by;
+  print ">> find_inc_by($f)\n" if $verbosity >= 3;
+
+  return 0 if $files{$f}; # already processed
+  return -1 unless -f $f; # deleted
+  $files{$_}++;
+
+  open FILE, '<', $f or die $!;
+  if (<FILE> =~ /^;INCLUDED_BY\s+(.*)$/) {
+    # add files listed after ;INCLUDED_BY to %files
+    @inc_by = split /\s+/, $1;
+    for (@inc_by) {
+      $files{$_} = 0 unless exists $files{$_};
+    }
+  }
+  close FILE;
+
+  if ($d++ < $max_depth) {
+    find_inc_by($_, $d) for @inc_by;
+  } else {
+    print "Warning: ;INCLUDED_BY is followed only up to $max_depth levels,\n".
+          "  the following files are not reloaded: @inc_by\n";
+  }
+}
+
+sub check_zones {
+  for my $f (keys %files) {
+    # skip files with errors and those that are not in the config
+    next unless $files{$f} > 0 && $zones->{$user}->{$f};
+    next if $f =~ /'/;
+    my $zone = basename $f;
+    print `$named_checkzone -kn -w .. '$zone' '$user/$f'`;
+    clean_exit 1 if $?; # error, reject push
+    push @zones, $f;
+  }
+}
+
+sub install_zones {
+  print "Reloading changed zones: @zones\n";
+
+  my $cwd = cwd;
+  # move master to new
+  git 'checkout -f master';
+  git 'reset --hard new';
+
+  chdir "$zone_dir/$user" or die $!;
+  git "clone $cwd ." unless -d '.git';
+  git 'reset --hard';
+  git 'pull';
+
+  for my $f (@zones) {
+    my $zone = basename $f;
+    my $view = $zones->{$user}->{$f};
+    $view = $default_view if $view eq 1;
+    `$rndc reload '$zone' $class $view`;
+  }
+
+  unlink $list_file;
+}
+
+sub pre_receive {
+  my ($old, $new, $ref);
+  chdir '..';
+
+  while (<STDIN>) { # <old-value> SP <new-value> SP <ref-name> LF
+    print if $verbosity >= 1;
+    next unless m,(\w+) (\w+) ([\w/]+),;
+    next if $3 ne 'refs/heads/master'; # only process master branch
+    die "Denied branch 'new', choose another name\n" if $3 eq 'refs/head/new';
+    ($old, $new, $ref) = ($1, $2, $3);
+  }
+
+  # nothing for master branch, exit
+  clean_exit 0 unless $ref;
+
+  # check what changed
+  git "checkout -qf $new";
+  $_ = git "diff --raw $old..$new";
+  $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([\w./-]+)$,gm;
+
+  process_files;
+
+  if (@zones) {
+    print "Zone check passed: @zones\n";
+    # save changed zone list for post-receive hook
+    open FILE, '>>', $list_file or die $!;
+    print FILE join(' ', @zones), "\n";
+    close FILE;
+  } else {
+    print "No zones to reload\n";
+  }
+
+  # save new commits in a new branch
+  git 'branch -D new';
+  git 'checkout -b new';
+}
+
+sub post_receive {
+  print "\n";
+  chdir '..';
+
+  open FILE, '<', $list_file or die $!;
+  push @zones, split /[\s\n\r]+/ while <FILE>;
+  close FILE;
+
+  install_zones;
+  print "Done. Don't forget to pull if you use auto increment.\n";
+}
+
+sub update_record {
+  my ($c, $f, @record) = split /\s+/, shift;
+  my ($ip) = $ENV{SSH_CLIENT} =~ /^([\d.]+|[a-f\d:]+)\s/i or die "Invalid IP address\n";
+  my $re = qr/^\s*/i;
+  $re = qr/$re$_\s+/i for (@record);
+  my $matched = 0;
+  my $changed = 0;
+  my @newfile;
+
+  chdir $user;
+  git 'checkout -f master';
+
+  open FILE, '<', $f or die "$f: $!";
+  while (<FILE>) {
+    my $line = $_;
+    if (!$matched && s/($re)([\d.]+|[a-f\d:]+)/$1$ip/i) {
+      print "Matched record:\n$line";
+      $matched = 1;
+      if ($line ne "$1$ip\n") {
+        $changed = 1;
+        $line = "$1$ip\n";
+        print "Updating it with:\n$line";
+      } else {
+        print "Not updating: already up-to-date\n";
+        close FILE;
+        clean_exit 0;
+      }
+    }
+    push @newfile, $line;
+  }
+  close FILE;
+  die "No matching record in $f: @record\n" unless $matched;
+
+  open FILE, '>', $f or die $!;
+  print FILE for @newfile;
+  close FILE;
+
+  my $fesc = $f;
+  $fesc =~ s/'/'\\''/g;
+  git "commit -m 'update-record: $fesc' '$fesc'", 1;
+
+  process_files $f;
+
+  # save new commits in a new branch
+  git 'branch -D new';
+  git 'checkout -b new';
+
+  install_zones if @zones;
+}

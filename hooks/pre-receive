@@ -1,0 +1,3 @@
+#!/bin/sh
+
+gitzone /etc/gitzone.conf pre-receive
