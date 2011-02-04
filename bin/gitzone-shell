@@ -9,7 +9,7 @@ allow_key_management=1
 git_shell=/usr/bin/git-shell
 gitzone=/usr/bin/gitzone
 config=/etc/gitzone.conf
-grep=grep
+grep=/bin/grep
 
 function error {
   echo "fatal: What do you think I am? A shell?"

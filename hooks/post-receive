@@ -1,5 +1,5 @@
 #!/bin/sh
 
 if [ -f .gitzone-list ]; then
-  gitzone /etc/gitzone.conf post-receive
+  /usr/bin/gitzone /etc/gitzone.conf post-receive
 fi
