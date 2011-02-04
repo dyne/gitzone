@@ -79,10 +79,10 @@ sub process_file {
     my $line = $_;
     if (/^(.*)(\b\d+\b)(.*?;AUTO_INCREMENT\b.*)$/) {
       # increment serial where marked with ;AUTO_INCREMENT
-      # if length of serial is 8 and starts with 20 treat it as a date
+      # if length of serial is 10 and starts with 20 treat it as a date
       my ($a,$s,$z) = ($1,int $2,$3);
       $date ||= strftime '%Y%m%d', localtime;
-      $s = ($s =~ /^$date/ || $s < 20000000 || $s >= 21000000) ? $s + 1 : $date.'00';
+      $s = ($s =~ /^$date/ || $s < 2000000000 || $s >= 2100000000) ? $s + 1 : $date.'00';
       $line = "$a$s$z\n";
       $changed = 1;
     } elsif (/^(\W*\$INCLUDE\W+)(\S+)(.*)$/) {
