@@ -1,9 +1,9 @@
 #!/bin/sh
 
-# only repo allowed for git  pull/push
+# only repo allowed for git pull/push
 repo='zones'
-# allow ssh key add/del/list commands
-allow_key_management=1
+# allow ssh key add/del/list commands if this file exists
+allow_key_mgmt_file='.ssh/authorized_keys_edit_allowed'
 
 # paths
 git_shell=/usr/bin/git-shell
@@ -25,7 +25,7 @@ elif [[ "$cmd" == git-receive-pack* ]]; then
   $git_shell -c "git-receive-pack '$repo'"
 elif [[ "$cmd" == update-record* ]]; then
   $gitzone $config update-record "$cmd"
-elif [ "$allow_key_management" == 1 ]; then
+elif [ -f $allow_key_mgmt_file ]; then
   if [ "$cmd" == list-keys ]; then
     cat .ssh/authorized_keys
   elif [[ "$cmd" == add-key* ]]; then
