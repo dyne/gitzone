@@ -51,6 +51,7 @@ sub git {
   }
   if ($ret >= 0 && $? >> 8 != $ret) {
     my ($package, $filename, $line) = caller;
+    print;
     die "Died at line $line.\n";
   }
   return $_;
