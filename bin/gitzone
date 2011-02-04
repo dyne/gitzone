@@ -49,7 +49,10 @@ sub git {
     #my $cwd = cwd; s/$cwd//g; # print relative paths
     print;
   }
-  die if $ret >= 0 && $? >> 8 != $ret;
+  if ($ret >= 0 && $? >> 8 != $ret) {
+    my ($package, $filename, $line) = caller;
+    die "Died at line $line.\n";
+  }
   return $_;
 }
 
