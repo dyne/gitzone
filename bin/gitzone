@@ -2,14 +2,11 @@
 #
 # gitzone by tg
 #
-# this program should be called from a pre-receive hook, it receives
-# <old-value> SP <new-value> SP <ref-name> LF
-# on STDIN for each branch, the push is rejected if the exit code is non-zero
-#
-# changed files are validated with named-checkzone and the push is rejected
-# if there's an error in the zones specified in the config file ($ARGV[0]),
-# if everything is OK, the zone files are copied to $zone_dir and the zone is
-# reloaded with rndc reload
+# this program is called from a pre-receive & post-receive git hook, if a push
+# is made to the master branch changed files are validated with named-checkzone,
+# the push is rejected if there's an error in one of the zone files specified in
+# the config file, if everything is OK, the zone files are copied to $zone_dir
+# and the zone is reloaded with rndc reload $zone $class $view
 
 use warnings;
 use strict;
@@ -20,7 +17,9 @@ use File::Basename qw/basename dirname/;
 our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $max_depth, $zones, $verbosity);
 our $user = getpwuid $<;
 
-my $config_file = $ARGV[0] or die "Usage: gitzone /path/to/gitzone.conf\n";
+@ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
+my ($config_file, $cmd) = @ARGV;
+
 do $config_file or die "Can't load config: $!\n";
 
 my $lock_file = realpath '.gitzone-lock';
@@ -35,8 +34,10 @@ sub cleanup { unlink $lock_file }
 sub clean_exit { cleanup; exit shift }
 $SIG{__DIE__} = \&cleanup;
 
-$_ = $ARGV[1];
-/^pre-receive$/ && pre_receive() || /^post-receive$/ && post_receive() || $update_record && /^update-record$/ && update_record($ARGV[2]);
+$_ = $cmd &&
+    /^pre-receive$/ && pre_receive() ||
+    /^post-receive$/ && post_receive() ||
+    $update_record && /^update-record$/ && update_record($ARGV[2]);
 cleanup;
 
 sub git {
