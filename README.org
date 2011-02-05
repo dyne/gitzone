@@ -107,9 +107,13 @@ update your IP is:
 
 Run this command whenever the IP changes or the interface comes up.
 
-*** Debian
+*** Debian, Ubuntu
 
-On Debian-like systems you can use a post-up command in /etc/network/interfaces.
+On Debian-like systems you can use a post-up command in =/etc/network/interfaces=.
+
+*** Gentoo
+
+On Gentoo you can put a postup() function in =/etc/conf.d/net=.
 
 ** Zone files
 
