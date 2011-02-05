@@ -17,7 +17,7 @@ use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
 use File::Basename qw/basename dirname/;
 
-our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $max_depth, $zones, $verbosity);
+our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $max_depth, $zones, $verbosity);
 our $user = getpwuid $<;
 
 my $config_file = $ARGV[0] or die "Usage: gitzone /path/to/gitzone.conf\n";
@@ -36,7 +36,7 @@ sub clean_exit { cleanup; exit shift }
 $SIG{__DIE__} = \&cleanup;
 
 $_ = $ARGV[1];
-/^pre-receive$/ && pre_receive() || /^post-receive$/ && post_receive() || /^update-record$/ && update_record($ARGV[2]);
+/^pre-receive$/ && pre_receive() || /^post-receive$/ && post_receive() || $update_record && /^update-record$/ && update_record($ARGV[2]);
 cleanup;
 
 sub git {
