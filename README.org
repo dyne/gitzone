@@ -116,7 +116,7 @@ On Debian-like systems you can use a post-up command in /etc/network/interfaces.
 There are a few keywords you can use in the zone files:
 
 - ;AUTO_INCREMENT after a serial number to automatically increment it during
-  a push. If the number is 8 digits and starts with 20 it's treated as a date.
+  a push. If the number is 10 digits and starts with 20 it's treated as a date.
   e.g.:
   : example.net.  IN  SOA  ns1.example.net. hostmaster.example.net. (
   :                        2011013101  ;AUTO_INCREMENT
