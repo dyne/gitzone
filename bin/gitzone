@@ -164,7 +164,7 @@ sub install_zones {
   my $cwd = cwd;
   # move master to new
   git 'checkout -f master';
-  git 'reset --hard new';
+  git 'reset --hard remotes/origin/new';
 
   chdir "$zone_dir/$user" or die $!;
   git "clone $cwd ." unless -d '.git';
