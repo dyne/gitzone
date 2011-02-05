@@ -2,6 +2,7 @@
 #+AUTHOR: tg(x)
 #+OPTIONS: ^:{}
 #+INFOJS_OPT: view:showall ltoc:nil
+#+STYLE: <style>html{max-width:1000px}</style>
 
 * About
 
