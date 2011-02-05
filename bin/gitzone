@@ -164,12 +164,12 @@ sub install_zones {
   my $cwd = cwd;
   # move master to new
   git 'checkout -f master';
-  git 'reset --hard remotes/origin/new';
+  git 'reset --hard new';
 
   chdir "$zone_dir/$user" or die $!;
   git "clone $cwd ." unless -d '.git';
-  git 'reset --hard';
-  git 'pull';
+  git 'fetch';
+  git 'reset --hard remotes/origin/master';
 
   for my $f (@zones) {
     my $zone = basename $f;
