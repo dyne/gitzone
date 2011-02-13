@@ -58,6 +58,26 @@ sub git {
   return $_;
 }
 
+# Load BIND config files specified in the $zones config variable.
+# First load the -default key, then the $user key.
+sub load_zones_config {
+  my $u = shift || '-default';
+
+  for my $f (keys %{$zones->{$u}}) {
+    next unless $f =~ m,^/, && -f $f;
+    open FILE, '<', $f or die $!;
+    while (<FILE>) {
+      if (/^\s*zone\s+"([^"]+)"/) {
+        $zones->{$user}->{$1} = $zones->{$u}->{$f};
+      }
+    }
+    close FILE;
+    delete $zones->{$u}->{$f} if $u ne '-default';
+  }
+
+  load_zones_config($user) if $u eq '-default';
+}
+
 sub process_files {
   $files{$_} = 0 for (@_);
   $files{$_} += process_file($_) for keys %files;
@@ -202,6 +222,7 @@ sub pre_receive {
   $_ = git "diff --raw $old..$new";
   $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([\w./-]+)$,gm;
 
+  load_zones_config;
   process_files;
 
   if (@zones) {
@@ -227,6 +248,7 @@ sub post_receive {
   push @zones, split /[\s\n\r]+/ while <FILE>;
   close FILE;
 
+  load_zones_config;
   install_zones;
   print "Done. Don't forget to pull if you use auto increment.\n";
 }
