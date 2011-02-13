@@ -209,7 +209,7 @@ sub install_zones {
     my ($zone, $dir) = fileparse $file;
     $dir = substr $dir, 0, -1;
     my $view = $zones->{$user}->{$dir}->{$zone};
-    print "$zone: ", `$rndc reload '$zone' $class $_` for @$view;
+    print "$_/$zone: ", `$rndc reload '$zone' $class $_` for @$view;
   }
 
   unlink $list_file;

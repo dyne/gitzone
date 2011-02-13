@@ -6,9 +6,9 @@ repo='zones'
 allow_key_mgmt_file='.ssh/authorized_keys_edit_allowed'
 
 # paths
-git_shell=/usr/bin/git-shell
-gitzone=/usr/bin/gitzone
 config=/etc/gitzone.conf
+gitzone=/usr/bin/gitzone
+git=/usr/bin/git
 grep=/bin/grep
 
 function error {
@@ -20,9 +20,9 @@ if [ "$1" != "-c" ]; then error; fi
 cmd=$2
 
 if [[ "$cmd" == git-upload-pack* ]]; then
-  $git_shell -c "git-upload-pack '$repo'"
+  $git upload-pack $repo
 elif [[ "$cmd" == git-receive-pack* ]]; then
-  $git_shell -c "git-receive-pack '$repo'"
+  $git receive-pack $repo
 elif [[ "$cmd" == update-record* ]]; then
   $gitzone $config update-record "$cmd"
 elif [ -f $allow_key_mgmt_file ]; then
