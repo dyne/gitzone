@@ -196,7 +196,8 @@ sub install_zones {
     my $zone = basename $f;
     my $view = $zones->{$user}->{$f};
     $view = $default_view if $view eq 1;
-    `$rndc reload '$zone' $class $view`;
+    $view = [$view] if ref $view ne 'ARRAY';
+    `$rndc reload '$zone' $class $_` for @$view;
   }
 
   unlink $list_file;
