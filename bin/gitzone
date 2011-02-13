@@ -12,7 +12,7 @@ use warnings;
 use strict;
 use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
-use File::Basename qw/basename dirname/;
+use File::Basename qw/fileparse/;
 
 our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $max_depth, $zones, $verbosity);
 our $user = getpwuid $<;
@@ -34,7 +34,7 @@ sub cleanup { unlink $lock_file }
 sub clean_exit { cleanup; exit shift }
 $SIG{__DIE__} = \&cleanup;
 
-$_ = $cmd &&
+($_ = $cmd) &&
     /^pre-receive$/ && pre_receive() ||
     /^post-receive$/ && post_receive() ||
     $update_record && /^update-record$/ && update_record($ARGV[2]);
@@ -61,21 +61,34 @@ sub git {
 # Load BIND config files specified in the $zones config variable.
 # First load the -default key, then the $user key.
 sub load_zones_config {
-  my $u = shift || '-default';
+  my $key = shift || '-default';
 
-  for my $f (keys %{$zones->{$u}}) {
-    next unless $f =~ m,^/, && -f $f;
-    open FILE, '<', $f or die $!;
-    while (<FILE>) {
-      if (/^\s*zone\s+"([^"]+)"/) {
-        $zones->{$user}->{$1} = $zones->{$u}->{$f};
-      }
-    }
-    close FILE;
-    delete $zones->{$u}->{$f} if $u ne '-default';
+  # move files not in a dir to a . dir for easier processing
+  for my $file (keys %{$zones->{$key}}) {
+    next if ref $zones->{$key}->{$file} eq 'HASH';
+    $zones->{$key}->{'.'}->{$file} = $zones->{$key}->{$file};
+    delete $zones->{$key}->{$file};
   }
 
-  load_zones_config($user) if $u eq '-default';
+  for my $dir (keys %{$zones->{$key}}) {
+    my $d = $zones->{$key}->{$dir};
+    for my $file (keys %$d) {
+      $d->{$file} = $default_view if $d->{$file} eq 1;
+      $d->{$file} = [$d->{$file}] if ref $d->{$file} ne 'ARRAY';
+      next unless $file =~ m,^/, && -f $file;
+
+      open FILE, '<', $file or die $!;
+      while (<FILE>) {
+        if (/^\s*zone\s+"([^"]+)"/) {
+          $zones->{$user}->{$dir}->{$1} = $d->{$file};
+        }
+      }
+      close FILE;
+      delete $d->{$file} if $key ne '-default';
+    }
+  }
+
+  load_zones_config($user) if $key eq '-default';
 }
 
 sub process_files {
@@ -86,14 +99,14 @@ sub process_files {
 }
 
 sub process_file {
-  my $f = shift; # filename
+  my $file = shift;
   my (@newfile, $changed, @inc_by);
-  print ">> process_file($f)\n" if $verbosity >= 3;
+  print ">> process_file($file)\n" if $verbosity >= 3;
 
-  return 0 if $files{$f}; # already processed
-  return -1 unless -f $f; # deleted
+  return 0 if $files{$file}; # already processed
+  return -1 unless -f $file; # deleted
 
-  open FILE, '<', $f or die $!;
+  open FILE, '<', $file or die $!;
   my $n = 0;
   while (<FILE>) {
     $n++;
@@ -108,10 +121,10 @@ sub process_file {
       $changed = 1;
     } elsif (/^(\W*\$INCLUDE\W+)(\S+)(.*)$/) {
       # check $INCLUDE lines for files outside the user dir
-      my ($a,$file,$z) = ($1,$2,$3);
-      unless ($file =~ m,^$user/, && $file !~ /\.\./) {
+      my ($a,$inc_file,$z) = ($1,$2,$3);
+      unless ($inc_file =~ m,^$user/, && $inc_file !~ /\.\./) {
         close FILE;
-        die "Error in $f:$n: invalid included file name, it should start with: $user/\n";
+        die "Error in $file:$n: invalid included file name, it should start with: $user/\n";
       }
     } else {
       if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
@@ -127,29 +140,27 @@ sub process_file {
   close FILE;
 
   if ($changed) {
-    open FILE, '>', $f or die $!;
+    open FILE, '>', $file or die $!;
     print FILE for @newfile;
     close FILE;
 
-    my $fesc = $f;
-    $fesc =~ s/'/'\\''/g;
-    git "commit -m 'auto increment: $fesc' '$fesc'", 1;
+    git "commit -m 'auto increment: $file' '$file'", 1;
   }
 
   return 1;
 }
 
 sub find_inc_by {
-  my $f = shift; # filename
-  my $d = shift || 1; # recursion depth
+  my $file = shift;
+  my $depth = shift || 1; # recursion depth
   my @inc_by;
-  print ">> find_inc_by($f)\n" if $verbosity >= 3;
+  print ">> find_inc_by($file)\n" if $verbosity >= 3;
 
-  return 0 if $files{$f}; # already processed
-  return -1 unless -f $f; # deleted
+  return 0 if $files{$file}; # already processed
+  return -1 unless -f $file; # deleted
   $files{$_}++;
 
-  open FILE, '<', $f or die $!;
+  open FILE, '<', $file or die $!;
   if (<FILE> =~ /^;INCLUDED_BY\s+(.*)$/) {
     # add files listed after ;INCLUDED_BY to %files
     @inc_by = split /\s+/, $1;
@@ -159,8 +170,8 @@ sub find_inc_by {
   }
   close FILE;
 
-  if ($d++ < $max_depth) {
-    find_inc_by($_, $d) for @inc_by;
+  if ($depth++ < $max_depth) {
+    find_inc_by($_, $depth) for @inc_by;
   } else {
     print "Warning: ;INCLUDED_BY is followed only up to $max_depth levels,\n".
           "  the following files are not reloaded: @inc_by\n";
@@ -168,14 +179,15 @@ sub find_inc_by {
 }
 
 sub check_zones {
-  for my $f (keys %files) {
+  for my $file (keys %files) {
     # skip files with errors and those that are not in the config
-    next unless $files{$f} > 0 && $zones->{$user}->{$f};
-    next if $f =~ /'/;
-    my $zone = basename $f;
-    print `$named_checkzone -kn -w .. '$zone' '$user/$f'`;
+    my ($zone, $dir) = fileparse $file;
+    $dir = substr $dir, 0, -1;
+    next unless $files{$file} > 0 && exists $zones->{$user}->{$dir}->{$zone};
+
+    print `$named_checkzone -kn -w .. '$zone' '$user/$file'`;
     clean_exit 1 if $?; # error, reject push
-    push @zones, $f;
+    push @zones, $file;
   }
 }
 
@@ -192,12 +204,11 @@ sub install_zones {
   git 'fetch';
   git 'reset --hard remotes/origin/master';
 
-  for my $f (@zones) {
-    my $zone = basename $f;
-    my $view = $zones->{$user}->{$f};
-    $view = $default_view if $view eq 1;
-    $view = [$view] if ref $view ne 'ARRAY';
-    `$rndc reload '$zone' $class $_` for @$view;
+  for my $file (@zones) {
+    my ($zone, $dir) = fileparse $file;
+    $dir = substr $dir, 0, -1;
+    my $view = $zones->{$user}->{$dir}->{$zone};
+    print "$zone: ", `$rndc reload '$zone' $class $_` for @$view;
   }
 
   unlink $list_file;
@@ -221,7 +232,8 @@ sub pre_receive {
   # check what changed
   git "checkout -qf $new";
   $_ = git "diff --raw $old..$new";
-  $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([\w./-]+)$,gm;
+  # parse diff output, add only valid zone names to %files for parsing
+  $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
 
   load_zones_config;
   process_files;
@@ -255,7 +267,7 @@ sub post_receive {
 }
 
 sub update_record {
-  my ($c, $f, @record) = split /\s+/, shift;
+  my ($c, $file, @record) = split /\s+/, shift;
   my ($ip) = $ENV{SSH_CLIENT} =~ /^([\d.]+|[a-f\d:]+)\s/i or die "Invalid IP address\n";
   my $re = qr/^\s*/i;
   $re = qr/$re$_\s+/i for (@record);
@@ -266,7 +278,7 @@ sub update_record {
   chdir $user;
   git 'checkout -f master';
 
-  open FILE, '<', $f or die "$f: $!";
+  open FILE, '<', $file or die "$file: $!";
   while (<FILE>) {
     my $line = $_;
     if (!$matched && s/($re)([\d.]+|[a-f\d:]+)/$1$ip/i) {
@@ -285,17 +297,15 @@ sub update_record {
     push @newfile, $line;
   }
   close FILE;
-  die "No matching record in $f: @record\n" unless $matched;
+  die "No matching record in $file: @record\n" unless $matched;
 
-  open FILE, '>', $f or die $!;
+  open FILE, '>', $file or die $!;
   print FILE for @newfile;
   close FILE;
 
-  my $fesc = $f;
-  $fesc =~ s/'/'\\''/g;
-  git "commit -m 'update-record: $fesc' '$fesc'", 1;
+  git "commit -m 'update-record: $file' '$file'", 1;
 
-  process_files $f;
+  process_files $file;
 
   # save new commits in a new branch
   git 'branch -D new';
