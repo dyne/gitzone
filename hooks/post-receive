@@ -1,5 +1,6 @@
 #!/bin/sh
 
+#(date; echo post-receive) >> ~/gitzone.log
 if [ -f .gitzone-list ]; then
-  /usr/bin/gitzone /etc/gitzone.conf post-receive
+  /usr/bin/gitzone /etc/gitzone.conf post-receive # 2>&1 | tee -a ~/gitzone.log
 fi
