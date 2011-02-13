@@ -75,15 +75,16 @@ sub load_zones_config {
     for my $file (keys %$d) {
       $d->{$file} = $default_view if $d->{$file} eq 1;
       $d->{$file} = [$d->{$file}] if ref $d->{$file} ne 'ARRAY';
-      next unless $file =~ m,^/, && -f $file;
-
-      open FILE, '<', $file or die $!;
-      while (<FILE>) {
-        if (/^\s*zone\s+"([^"]+)"/) {
-          $zones->{$user}->{$dir}->{$1} = $d->{$file};
+      next unless $file =~ m,^/,;
+      if (-f $file) {
+        open FILE, '<', $file or die $!;
+        while (<FILE>) {
+          if (/^\s*zone\s+"([^"]+)"/) {
+            $zones->{$user}->{$dir}->{$1} = $d->{$file};
+          }
         }
+        close FILE;
       }
-      close FILE;
       delete $d->{$file} if $key ne '-default';
     }
   }
