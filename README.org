@@ -83,7 +83,7 @@ hooks on the server make commits to the repository during a push.
   % git clone ns.example.net:zones
   % cd zones
   % # edit files
-  % git commmit
+  % git commit
   % git push origin && git pull
 #+END_EXAMPLE
 
