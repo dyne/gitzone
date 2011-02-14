@@ -14,7 +14,7 @@ use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
 use File::Basename qw/fileparse/;
 
-our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $max_depth, $zones, $verbosity);
+our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $user_includes, $max_depth, $zones, $verbosity);
 our $user = getpwuid $<;
 
 @ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
@@ -121,11 +121,13 @@ sub process_file {
       $line = "$a$s$z\n";
       $changed = 1;
     } elsif (/^(\W*\$INCLUDE\W+)(\S+)(.*)$/) {
-      # check $INCLUDE lines for files outside the user dir
       my ($a,$inc_file,$z) = ($1,$2,$3);
-      unless ($inc_file =~ m,^$user/, && $inc_file !~ /\.\./) {
-        close FILE;
-        die "Error in $file:$n: invalid included file name, it should start with: $user/\n";
+      if ($user_includes) {
+        # check $INCLUDE lines for files outside the user dir
+        unless ($inc_file =~ m,^$user/, && $inc_file !~ /\.\./) {
+          close FILE;
+          die "Error in $file:$n: invalid included file name, it should start with: $user/\n";
+        }
       }
     } else {
       if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
@@ -186,7 +188,11 @@ sub check_zones {
     $dir = substr $dir, 0, -1;
     next unless $files{$file} > 0 && exists $zones->{$user}->{$dir}->{$zone};
 
-    print `$named_checkzone -kn -w .. '$zone' '$user/$file'`;
+    if ($user_includes) {
+      print `$named_checkzone -kn -w .. '$zone' '$user/$file'`;
+    } else {
+      print `$named_checkzone -kn '$zone' '$file'`;
+    }
     clean_exit 1 if $?; # error, reject push
     push @zones, $file;
   }
