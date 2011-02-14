@@ -260,7 +260,7 @@ sub pre_receive {
   }
 
   # save new commits in a new branch
-  git 'branch -D new';
+  git 'branch -D new', 0, -1;
   git 'checkout -b new';
 }
 
