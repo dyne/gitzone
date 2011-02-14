@@ -21,7 +21,7 @@ key management.
 - set PREFIX in Makefile and make sure the paths in the hooks are correct, then
   : # make install
 
-- edit the settings in gitzone-shell
+- edit path settings in gitzone-shell
 
 - create users with ssh access and set their shell to gitzone-shell
 
@@ -34,15 +34,23 @@ key management.
   : # cd zones
   : # git config receive.denyCurrentBranch ignore
   : # cd hooks
-  : # ln -s /usr/lib/gitzone/hooks/pre-receive
-  : # ln -s /usr/lib/gitzone/hooks/post-receive
+  : # ln -s /usr/libexec/gitzone/pre-receive
+  : # ln -s /usr/libexec/gitzone/post-receive
 
-- create a .gitconfig for the user that contains user name & user email (used
-  for auto increment commits)
+- create a .gitconfig for each user that contains user name & user email (used
+  for auto increment commits):
+  : # git config -f ~$user/.gitconfig user.name Auto Incrementer
+  : # git config -f ~$user/.gitconfig user.email "$user@ns.example.com"
+
+- add ssh keys to ~$user/.ssh/authorized_keys and enable ssh key editing if desired:
+  : # touch ~$user/.ssh/authorized_keys_edit_allowed
+
+- make sure the user's HOME directory has correct permissions:
+  : # chown -R $user:users ~$user
 
 - edit the settings in gitzone.conf
 
-- create a directory for each user in $zone_dir and it them to the user, this
+- create a directory for each user in $zone_dir and chown them to the users, this
   will contain a clone of the user's repository, the zone files here should be
   included in named.conf.
   : # cd $zone_dir
