@@ -232,7 +232,11 @@ sub pre_receive {
 
   # check what changed
   git "checkout -qf $new";
-  $_ = git "diff --raw $old..$new";
+  if ($old =~ /^0+$/) {
+    $_ = git "show --raw $new";
+  } else {
+    $_ = git "diff --raw $old..$new";
+  }
   # parse diff output, add only valid zone names to %files for parsing
   $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
 
