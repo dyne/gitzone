@@ -189,9 +189,9 @@ sub check_zones {
     next unless $files{$file} > 0 && exists $zones->{$user}->{$dir}->{$zone};
 
     if ($user_includes) {
-      print `$named_checkzone -kn -w .. '$zone' '$user/$file'`;
+      print `$named_checkzone -w .. '$zone' '$user/$file'`;
     } else {
-      print `$named_checkzone -kn '$zone' '$file'`;
+      print `$named_checkzone '$zone' '$file'`;
     }
     clean_exit 1 if $?; # error, reject push
     push @zones, $file;
