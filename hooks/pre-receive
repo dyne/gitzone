@@ -1,4 +1,4 @@
 #!/bin/sh
 
 #(date; echo pre-receive) >> ~/gitzone.log
-/usr/bin/gitzone /etc/gitzone.conf pre-receive # 2>&1 | tee -a ~/gitzone.log
+/usr/bin/gitzone /etc/gitzone.conf pre-receive
