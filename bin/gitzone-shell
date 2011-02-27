@@ -1,7 +1,11 @@
 #!/bin/sh
 
 # only repo allowed for git pull/push
-repo='zones'
+repo=$LOGNAME
+# directory the repo is in, relative to $HOME
+repo_dir='zones'
+#repo_dir='.'
+
 # allow ssh key add/del/list commands if this file exists
 allow_key_mgmt_file='.ssh/authorized_keys_edit_allowed'
 
@@ -20,10 +24,11 @@ if [ "$1" != "-c" ]; then error; fi
 cmd=$2
 
 if [[ "$cmd" == git-upload-pack* ]]; then
-  $git upload-pack $repo
+  $git upload-pack $repo_dir/$repo
 elif [[ "$cmd" == git-receive-pack* ]]; then
-  $git receive-pack $repo
+  $git receive-pack $repo_dir/$repo
 elif [[ "$cmd" == update-record* ]]; then
+  cd $repo_dir/$repo/.git
   $gitzone $config update-record "$cmd"
 elif [ -f $allow_key_mgmt_file ]; then
   if [ "$cmd" == list-keys ]; then

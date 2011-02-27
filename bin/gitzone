@@ -12,14 +12,17 @@ use warnings;
 use strict;
 use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
-use File::Basename qw/fileparse/;
-
-our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $user_includes, $max_depth, $zones, $verbosity);
-our $user = getpwuid $<;
+use File::Basename qw/fileparse basename/;
 
 @ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
-my ($config_file, $cmd) = @ARGV;
+basename(realpath) eq '.git' or die "gitzone has to be run from a .git directory\n";
+chdir '..';
 
+our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $unrestricted_includes, $max_depth, $repos, $verbosity);
+our $user = getpwuid $<;
+our $repo = basename realpath;
+
+my ($config_file, $cmd) = @ARGV;
 do $config_file or die "Can't load config: $!\n";
 
 my $lock_file = realpath '.gitzone-lock';
@@ -58,20 +61,20 @@ sub git {
   return $_;
 }
 
-# Load BIND config files specified in the $zones config variable.
-# First load the -default key, then the $user key.
-sub load_zones_config {
+# Load BIND config files specified in the $repos config variable.
+# First load the -default key, then the $repo key.
+sub load_repos_config {
   my $key = shift || '-default';
 
   # move files not in a dir to a . dir for easier processing
-  for my $file (keys %{$zones->{$key}}) {
-    next if ref $zones->{$key}->{$file} eq 'HASH';
-    $zones->{$key}->{'.'}->{$file} = $zones->{$key}->{$file};
-    delete $zones->{$key}->{$file};
+  for my $file (keys %{$repos->{$key}}) {
+    next if ref $repos->{$key}->{$file} eq 'HASH';
+    $repos->{$key}->{'.'}->{$file} = $repos->{$key}->{$file};
+    delete $repos->{$key}->{$file};
   }
 
-  for my $dir (keys %{$zones->{$key}}) {
-    my $d = $zones->{$key}->{$dir};
+  for my $dir (keys %{$repos->{$key}}) {
+    my $d = $repos->{$key}->{$dir};
     for my $file (keys %$d) {
       $d->{$file} = $default_view if $d->{$file} eq 1;
       $d->{$file} = [$d->{$file}] if ref $d->{$file} ne 'ARRAY';
@@ -80,7 +83,7 @@ sub load_zones_config {
         open FILE, '<', $file or die $!;
         while (<FILE>) {
           if (/^\s*zone\s+"([^"]+)"/) {
-            $zones->{$user}->{$dir}->{$1} = $d->{$file};
+            $repos->{$repo}->{$dir}->{$1} = $d->{$file};
           }
         }
         close FILE;
@@ -89,7 +92,7 @@ sub load_zones_config {
     }
   }
 
-  load_zones_config($user) if $key eq '-default';
+  load_zones_config($repo) if $key eq '-default';
 }
 
 sub process_files {
@@ -122,11 +125,11 @@ sub process_file {
       $changed = 1;
     } elsif (/^(\W*\$INCLUDE\W+)(\S+)(.*)$/) {
       my ($a,$inc_file,$z) = ($1,$2,$3);
-      if ($user_includes) {
-        # check $INCLUDE lines for files outside the user dir
-        unless ($inc_file =~ m,^$user/, && $inc_file !~ /\.\./) {
+      unless ($unrestricted_includes) {
+        # check $INCLUDE lines for files outside the repo dir
+        unless ($inc_file =~ m,^$repo/, && $inc_file !~ /\.\./) {
           close FILE;
-          die "Error in $file:$n: invalid included file name, it should start with: $user/\n";
+          die "Error in $file:$n: invalid included file name, it should start with: $repo/\n";
         }
       }
     } else {
@@ -186,13 +189,9 @@ sub check_zones {
     # skip files with errors and those that are not in the config
     my ($zone, $dir) = fileparse $file;
     $dir = substr $dir, 0, -1;
-    next unless $files{$file} > 0 && exists $zones->{$user}->{$dir}->{$zone};
+    next unless $files{$file} > 0 && exists $repos->{$repo}->{$dir}->{$zone};
 
-    if ($user_includes) {
-      print `$named_checkzone -w .. '$zone' '$user/$file'`;
-    } else {
-      print `$named_checkzone '$zone' '$file'`;
-    }
+    print `$named_checkzone -w .. '$zone' '$repo/$file'`;
     clean_exit 1 if $?; # error, reject push
     push @zones, $file;
   }
@@ -206,7 +205,7 @@ sub install_zones {
   git 'checkout -f master';
   git 'reset --hard new';
 
-  chdir "$zone_dir/$user" or die $!;
+  chdir "$zone_dir/$repo" or die $!;
   git "clone $cwd ." unless -d '.git';
   git 'fetch';
   git 'reset --hard remotes/origin/master';
@@ -214,7 +213,7 @@ sub install_zones {
   for my $file (@zones) {
     my ($zone, $dir) = fileparse $file;
     $dir = substr $dir, 0, -1;
-    my $view = $zones->{$user}->{$dir}->{$zone};
+    my $view = $repos->{$repo}->{$dir}->{$zone};
     print "$_/$zone: ", `$rndc reload '$zone' $class $_` for @$view;
   }
 
@@ -223,7 +222,6 @@ sub install_zones {
 
 sub pre_receive {
   my ($old, $new, $ref);
-  chdir '..';
 
   while (<STDIN>) { # <old-value> SP <new-value> SP <ref-name> LF
     print if $verbosity >= 1;
@@ -246,7 +244,7 @@ sub pre_receive {
   # parse diff output, add only valid zone names to %files for parsing
   $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
 
-  load_zones_config;
+  load_repos_config;
   process_files;
 
   if (@zones) {
@@ -266,13 +264,12 @@ sub pre_receive {
 
 sub post_receive {
   print "\n";
-  chdir '..';
 
   open FILE, '<', $list_file or die $!;
   push @zones, split /[\s\n\r]+/ while <FILE>;
   close FILE;
 
-  load_zones_config;
+  load_repos_config;
   install_zones;
   print "Done. Don't forget to pull if you use auto increment.\n";
 }
@@ -286,7 +283,6 @@ sub update_record {
   my $changed = 0;
   my @newfile;
 
-  chdir $user;
   git 'checkout -f master';
 
   open FILE, '<', $file or die "$file: $!";
