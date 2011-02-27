@@ -16,17 +16,18 @@ use File::Basename qw/fileparse basename/;
 
 @ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
 basename(realpath) eq '.git' or die "gitzone has to be run from a .git directory\n";
+
+my $lock_file = realpath '.gitzone-lock';
+my $list_file = realpath '.gitzone-list';
 chdir '..';
 
-our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $unrestricted_includes, $max_depth, $repos, $verbosity);
 our $user = getpwuid $<;
 our $repo = basename realpath;
+our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_record, $unrestricted_includes, $max_depth, $repos, $verbosity);
 
 my ($config_file, $cmd) = @ARGV;
 do $config_file or die "Can't load config: $!\n";
 
-my $lock_file = realpath '.gitzone-lock';
-my $list_file = realpath '.gitzone-list';
 my (%files, %inc_files, @zones, $date);
 delete $ENV{GIT_DIR};
 
