@@ -92,7 +92,7 @@ sub load_repos_config {
     }
   }
 
-  load_zones_config($repo) if $key eq '-default';
+  load_repos_config($repo) if $key eq '-default';
 }
 
 sub process_files {
