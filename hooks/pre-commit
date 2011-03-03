@@ -1,0 +1,3 @@
+#!/bin/sh
+
+/usr/bin/gitzone /etc/gitzone.conf pre-commit

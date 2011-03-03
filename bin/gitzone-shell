@@ -35,12 +35,8 @@ elif [ -f $allow_key_mgmt_file ]; then
     cat .ssh/authorized_keys
   elif [[ "$cmd" == add-key* ]]; then
     key="${cmd:8}"
-    #if [[ "$key" =~ ^ssh-(rsa|dss)\ [a-zA-Z0-9/+]+=*\ [a-zA-Z0-9_.]+@[a-zA-Z0-9.-]+$ ]]; then
-      echo "$key" >> .ssh/authorized_keys && \
-        echo "key added"
-    #else
-    #  echo "invalid key"
-    #fi
+    echo "$key" >> .ssh/authorized_keys && \
+      echo "key added"
   elif [[ "$cmd" == del-key* ]]; then
     key="${cmd:8}"
     $grep -v "$key" .ssh/authorized_keys > .ssh/authorized_keys-new && \

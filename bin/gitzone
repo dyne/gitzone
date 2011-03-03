@@ -2,23 +2,27 @@
 #
 # gitzone by tg
 #
-# this program is called from a pre-receive & post-receive git hook, if a push
-# is made to the master branch changed files are validated with named-checkzone,
-# the push is rejected if there's an error in one of the zone files specified in
-# the config file, if everything is OK, the zone files are copied to $zone_dir
-# and the zone is reloaded with rndc reload $zone $class $view
+# This program is called from a pre-receive & post-receive or pre-commit &
+# post-commit git hook. If a push is made to the master branch, changed files
+# are validated with named-checkzone>. The push or commit is rejected if there's
+# an error in one of the zone files specified in the config file. If everything
+# is OK, the zone files are copied to $zone_dir and the zone is reloaded with
+# the following command: rndc reload $zone $class $view
 
 use warnings;
 use strict;
 use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
 use File::Basename qw/fileparse basename/;
+use File::Temp;
 
 @ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
+chdir '.git' if -d '.git';
 basename(realpath) eq '.git' or die "gitzone has to be run from a .git directory\n";
 
 my $lock_file = realpath '.gitzone-lock';
 my $list_file = realpath '.gitzone-list';
+my $stash_file;
 chdir '..';
 
 our $user = getpwuid $<;
@@ -28,19 +32,21 @@ our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_re
 my ($config_file, $cmd) = @ARGV;
 do $config_file or die "Can't load config: $!\n";
 
-my (%files, %inc_files, @zones, $date);
+my (%files, %inc_files, @zones, @changed_files, $date, $cleanup);
 delete $ENV{GIT_DIR};
 
 !-e $lock_file or die "Error: lock file exists\n";
 open FILE, '>', $lock_file or die $!; close FILE;
 
-sub cleanup { unlink $lock_file }
+sub cleanup { unlink $lock_file; &$cleanup() if ref $cleanup }
 sub clean_exit { cleanup; exit shift }
 $SIG{__DIE__} = \&cleanup;
 
 ($_ = $cmd) &&
     /^pre-receive$/ && pre_receive() ||
     /^post-receive$/ && post_receive() ||
+    /^pre-commit$/ && pre_commit() ||
+    /^post-commit$/ && post_commit() ||
     $update_record && /^update-record$/ && update_record($ARGV[2]);
 cleanup;
 
@@ -64,7 +70,7 @@ sub git {
 
 # Load BIND config files specified in the $repos config variable.
 # First load the -default key, then the $repo key.
-sub load_repos_config {
+sub load_repo_config {
   my $key = shift || '-default';
 
   # move files not in a dir to a . dir for easier processing
@@ -93,23 +99,42 @@ sub load_repos_config {
     }
   }
 
-  load_repos_config($repo) if $key eq '-default';
+  load_repo_config($repo) if $key eq '-default';
+}
+
+sub check_what_changed {
+  my ($old, $new) = @_;
+
+  # diff with empty tree if there's no previous commit
+  $old = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' if !$old || $old =~ /^0+$/;
+
+  $_ = git "diff --raw ". ($new ? "$old..$new" : $old);
+
+  # parse diff output, add only valid zone names to %files for parsing
+  $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
 }
 
 sub process_files {
   $files{$_} = 0 for (@_);
-  $files{$_} += process_file($_) for keys %files;
-  find_inc_by($_) for keys %inc_files;
+  process_file($_) for keys %files;
   check_zones();
+
+  if (@changed_files) {
+    print "adding changed files: @changed_files\n" if $verbosity >= 2;
+    git "add @changed_files";
+  }
 }
 
 sub process_file {
-  my $file = shift;
+  my ($file, $depth) = @_;
   my (@newfile, $changed, @inc_by);
   print ">> process_file($file)\n" if $verbosity >= 3;
 
   return 0 if $files{$file}; # already processed
-  return -1 unless -f $file; # deleted
+  return -1 unless -f $file;
+
+  print ">>> processing $file\n" if $verbosity >= 3;
+  $files{$_}++;
 
   open FILE, '<', $file or die $!;
   my $n = 0;
@@ -124,7 +149,7 @@ sub process_file {
       $s = ($s =~ /^$date/ || $s < 2000000000 || $s >= 2100000000) ? $s + 1 : $date.'00';
       $line = "$a$s$z\n";
       $changed = 1;
-    } elsif (/^(\W*\$INCLUDE\W+)(\S+)(.*)$/) {
+    } elsif (/^(\s*\$INCLUDE\s+)(\S+)(.*)$/) {
       my ($a,$inc_file,$z) = ($1,$2,$3);
       unless ($unrestricted_includes) {
         # check $INCLUDE lines for files outside the repo dir
@@ -147,64 +172,66 @@ sub process_file {
   close FILE;
 
   if ($changed) {
+    print ">>> $file changed, saving\n" if $verbosity >= 3;
+
     open FILE, '>', $file or die $!;
     print FILE for @newfile;
     close FILE;
 
-    git "commit -m 'auto increment: $file' '$file'", 1;
+    push @changed_files, $file;
+  }
+
+  if ($depth++ < $max_depth) {
+    process_file($_, $depth) for @inc_by;
+  } else {
+    print "Warning: ;INCLUDED_BY is followed only up to $max_depth levels,\n".
+          "  the following files are not reloaded: @inc_by\n";
   }
 
   return 1;
 }
 
-sub find_inc_by {
-  my $file = shift;
-  my $depth = shift || 1; # recursion depth
-  my @inc_by;
-  print ">> find_inc_by($file)\n" if $verbosity >= 3;
-
-  return 0 if $files{$file}; # already processed
-  return -1 unless -f $file; # deleted
-  $files{$_}++;
-
-  open FILE, '<', $file or die $!;
-  if (<FILE> =~ /^;INCLUDED_BY\s+(.*)$/) {
-    # add files listed after ;INCLUDED_BY to %files
-    @inc_by = split /\s+/, $1;
-    for (@inc_by) {
-      $files{$_} = 0 unless exists $files{$_};
-    }
-  }
-  close FILE;
-
-  if ($depth++ < $max_depth) {
-    find_inc_by($_, $depth) for @inc_by;
-  } else {
-    print "Warning: ;INCLUDED_BY is followed only up to $max_depth levels,\n".
-          "  the following files are not reloaded: @inc_by\n";
-  }
-}
-
 sub check_zones {
   for my $file (keys %files) {
-    # skip files with errors and those that are not in the config
     my ($zone, $dir) = fileparse $file;
     $dir = substr $dir, 0, -1;
+    # skip files with errors and those that are not in the config
     next unless $files{$file} > 0 && exists $repos->{$repo}->{$dir}->{$zone};
 
+    print "Checking zone $zone\n";
     print `$named_checkzone -w .. '$zone' '$repo/$file'`;
     clean_exit 1 if $?; # error, reject push
     push @zones, $file;
   }
 }
 
+sub save_list_file {
+  if (@zones) {
+    print "Zone check passed: @zones\n";
+    # save changed zone list for post-receive hook
+    open FILE, '>>', $list_file or die $!;
+    print FILE join(' ', @zones), "\n";
+    close FILE;
+  } else {
+    print "No zones to reload\n";
+  }
+}
+
+sub load_list_file {
+  return unless -f $list_file;
+  my %zones;
+  open FILE, '<', $list_file or die $!;
+  while (<FILE>) {
+    $zones{$_} = 1 for split /[\s\n\r]+/;
+  }
+  close FILE;
+  @zones = keys %zones;
+}
+
 sub install_zones {
   print "Reloading changed zones: @zones\n";
 
   my $cwd = cwd;
-  # move master to new
-  git 'checkout -f master';
-  git 'reset --hard new';
 
   chdir "$zone_dir/$repo" or die $!;
   git "clone $cwd ." unless -d '.git';
@@ -221,6 +248,24 @@ sub install_zones {
   unlink $list_file;
 }
 
+# save working dir state
+# (git stash wouldn't work without conflicts if there's a
+# change in both the index & working tree in the same file)
+sub stash_save {
+  $stash_file = File::Temp::tempnam('.git', '.gitzone-stash-');
+  print "Saving working tree to $stash_file\n";
+  git "update-index --refresh -q", 0, -1;
+  git "diff >$stash_file";
+  git 'checkout .';
+}
+
+# restore working dir
+sub stash_pop {
+  print "Restoring working tree from $stash_file\n";
+  git "apply --reject --whitespace=nowarn $stash_file", 1, -1;
+  unlink $stash_file unless $?;
+}
+
 sub pre_receive {
   my ($old, $new, $ref);
 
@@ -235,44 +280,60 @@ sub pre_receive {
   # nothing for master branch, exit
   clean_exit 0 unless $ref;
 
-  # check what changed
+  # checkout changes
   git "checkout -qf $new";
-  if ($old =~ /^0+$/) {
-    $_ = git "whatchanged $new";
-  } else {
-    $_ = git "diff --raw $old..$new";
-  }
-  # parse diff output, add only valid zone names to %files for parsing
-  $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
-
-  load_repos_config;
+  check_what_changed($old, $new);
+  load_repo_config;
   process_files;
-
-  if (@zones) {
-    print "Zone check passed: @zones\n";
-    # save changed zone list for post-receive hook
-    open FILE, '>>', $list_file or die $!;
-    print FILE join(' ', @zones), "\n";
-    close FILE;
-  } else {
-    print "No zones to reload\n";
-  }
+  git "commit -m 'auto increment: @changed_files'", 1 if @changed_files;
+  save_list_file;
 
   # save new commits in a new branch
-  git 'branch -D new', 0, -1;
-  git 'checkout -b new';
+  git 'checkout -B new';
+}
+
+sub pre_commit {
+  stash_save;
+
+  $cleanup = sub {
+    # reset any changes, e.g. auto inc.
+    git 'checkout .';
+    stash_pop;
+  };
+
+  git 'rev-parse --verify HEAD';
+  check_what_changed($? ? undef : 'HEAD');
+  load_repo_config;
+  process_files;
+
+  $cleanup = sub {
+    stash_pop;
+  };
+
+  save_list_file;
 }
 
 sub post_receive {
   print "\n";
 
-  open FILE, '<', $list_file or die $!;
-  push @zones, split /[\s\n\r]+/ while <FILE>;
-  close FILE;
+  # move master to new
+  git 'checkout -f master';
+  git 'reset --hard new';
 
-  load_repos_config;
+  load_repo_config;
+  load_list_file;
   install_zones;
+
   print "Done. Don't forget to pull if you use auto increment.\n";
+}
+
+sub post_commit {
+  print "\n";
+
+  load_repo_config;
+  load_list_file;
+  install_zones;
+  print "Done.\n";
 }
 
 sub update_record {
@@ -314,10 +375,5 @@ sub update_record {
   git "commit -m 'update-record: $file' '$file'", 1;
 
   process_files $file;
-
-  # save new commits in a new branch
-  git 'branch -D new';
-  git 'checkout -b new';
-
   install_zones if @zones;
 }
