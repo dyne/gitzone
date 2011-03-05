@@ -297,7 +297,7 @@ sub pre_commit {
     stash_pop;
   };
 
-  git 'rev-parse --verify HEAD';
+  git 'rev-parse --verify HEAD', 0, -1;
   check_what_changed($? ? undef : 'HEAD');
   load_repo_config;
   process_files;
