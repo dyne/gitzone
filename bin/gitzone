@@ -32,7 +32,7 @@ our ($zone_dir, $git, $named_checkzone, $rndc, $class, $default_view, $update_re
 my ($config_file, $cmd) = @ARGV;
 do $config_file or die "Can't load config: $!\n";
 
-my (%files, %inc_files, @zones, @changed_files, $date, $cleanup);
+my (%files, @zones, @changed_files, $date, $cleanup);
 delete $ENV{GIT_DIR};
 
 !-e $lock_file or die "Error: lock file exists\n";
@@ -160,11 +160,7 @@ sub process_file {
       }
     } else {
       if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
-        # add files listed after ;INCLUDED_BY to %inc_files
         @inc_by = split /\s+/, $1;
-        for (@inc_by) {
-          $inc_files{$_} = 0 unless exists $files{$_};
-        }
       }
     }
     push @newfile, $line;
