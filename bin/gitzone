@@ -281,7 +281,7 @@ sub pre_receive {
   check_what_changed($old, $new);
   load_repo_config;
   process_files;
-  git "commit -m 'auto increment: @changed_files'", 1 if @changed_files;
+  git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
   save_list_file;
 
   # save new commits in a new branch
@@ -368,7 +368,7 @@ sub update_record {
   print FILE for @newfile;
   close FILE;
 
-  git "commit -m 'update-record: $file' '$file'", 1;
+  git "commit -nm 'update-record: $file' '$file'", 1;
 
   process_files $file;
   install_zones if @zones;
