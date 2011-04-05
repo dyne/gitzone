@@ -115,7 +115,7 @@ sub check_what_changed {
 }
 
 sub process_files {
-  $files{$_} = 0 for (@_);
+  $files{$_} = 0 for @_;
   process_file($_) for keys %files;
   check_zones();
 
@@ -370,6 +370,8 @@ sub update_record {
 
   git "commit -nm 'update-record: $file' '$file'", 1;
 
+  load_repo_config;
   process_files $file;
+  git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
   install_zones if @zones;
 }
