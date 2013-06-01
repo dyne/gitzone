@@ -188,8 +188,10 @@ sub process_file {
 }
 
 sub check_zones {
+  print ">> check_zones: ,",%files,"\n" if $verbosity >= 3;
   for my $file (keys %files) {
     my ($zone, $dir) = fileparse $file;
+    $zone =~ s/\.signed$//;
     $dir = substr $dir, 0, -1;
     # skip files with errors and those that are not in the config
     next unless $files{$file} > 0 && exists $repos->{$repo}->{$dir}->{$zone};
@@ -236,6 +238,7 @@ sub install_zones {
 
   for my $file (@zones) {
     my ($zone, $dir) = fileparse $file;
+    $zone =~ s/\.signed$//;
     $dir = substr $dir, 0, -1;
     my $view = $repos->{$repo}->{$dir}->{$zone};
     print "$_/$zone: ", `$rndc reload '$zone' $class $_` for @$view;
