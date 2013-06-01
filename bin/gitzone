@@ -122,9 +122,11 @@ sub check_what_changed {
     my ($old, $new) = @_;
 
     # diff with empty tree if there's no previous commit
-    $old = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' if !$old || $old =~ /^0+$/;
-
-    $_ = git "diff --raw ". ($new ? "$old..$new" : $old);
+    if (!$old || $old =~ /^0+$/) {
+	$_ = git "diff-tree --root $new";
+    } else {
+	$_ = git "diff --raw --abbrev=40 ". ($new ? "$old..$new" : $old);
+    }
 
     # parse diff output, add only valid zone names to %files for parsing
     $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
