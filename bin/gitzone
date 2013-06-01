@@ -67,330 +67,330 @@ $SIG{__DIE__} = \&cleanup;
 cleanup;
 
 sub git {
-  my ($args, $print, $ret) = @_;
-  $ret ||=0;
-  print "% git $args\n" if $verbosity >= 2;
-  $_ = `$git $args 2>&1`;
-  $print = 1 if !defined $print && $verbosity >= 1;
-  if ($print) {
-    #my $cwd = cwd; s/$cwd//g; # print relative paths
-    print;
-  }
-  if ($ret >= 0 && $? >> 8 != $ret) {
-    my ($package, $filename, $line) = caller;
-    print;
-    die "Died at line $line.\n";
-  }
-  return $_;
+    my ($args, $print, $ret) = @_;
+    $ret ||=0;
+    print "% git $args\n" if $verbosity >= 2;
+    $_ = `$git $args 2>&1`;
+    $print = 1 if !defined $print && $verbosity >= 1;
+    if ($print) {
+	#my $cwd = cwd; s/$cwd//g; # print relative paths
+	print;
+    }
+    if ($ret >= 0 && $? >> 8 != $ret) {
+	my ($package, $filename, $line) = caller;
+	print;
+	die "Died at line $line.\n";
+    }
+    return $_;
 }
 
 # Load BIND config files specified in the $repos config variable.
 # First load the -default key, then the $repo key.
 sub load_repo_config {
-  my $key = shift || '-default';
+    my $key = shift || '-default';
 
-  # move files not in a dir to a . dir for easier processing
-  for my $file (keys %{$repos->{$key}}) {
-    next if ref $repos->{$key}->{$file} eq 'HASH';
-    $repos->{$key}->{'.'}->{$file} = $repos->{$key}->{$file};
-    delete $repos->{$key}->{$file};
-  }
-
-  for my $dir (keys %{$repos->{$key}}) {
-    my $d = $repos->{$key}->{$dir};
-    for my $file (keys %$d) {
-      $d->{$file} = $default_view if $d->{$file} eq 1;
-      $d->{$file} = [$d->{$file}] if ref $d->{$file} ne 'ARRAY';
-      next unless $file =~ m,^/,;
-      if (-f $file) {
-        open FILE, '<', $file or die $!;
-        while (<FILE>) {
-          if (/^\s*zone\s+"([^"]+)"/) {
-            $repos->{$repo}->{$dir}->{$1} = $d->{$file};
-          }
-        }
-        close FILE;
-      }
-      delete $d->{$file} if $key ne '-default';
+    # move files not in a dir to a . dir for easier processing
+    for my $file (keys %{$repos->{$key}}) {
+	next if ref $repos->{$key}->{$file} eq 'HASH';
+	$repos->{$key}->{'.'}->{$file} = $repos->{$key}->{$file};
+	delete $repos->{$key}->{$file};
     }
-  }
 
-  load_repo_config($repo) if $key eq '-default';
+    for my $dir (keys %{$repos->{$key}}) {
+	my $d = $repos->{$key}->{$dir};
+	for my $file (keys %$d) {
+	    $d->{$file} = $default_view if $d->{$file} eq 1;
+	    $d->{$file} = [$d->{$file}] if ref $d->{$file} ne 'ARRAY';
+	    next unless $file =~ m,^/,;
+	    if (-f $file) {
+		open FILE, '<', $file or die $!;
+		while (<FILE>) {
+		    if (/^\s*zone\s+"([^"]+)"/) {
+			$repos->{$repo}->{$dir}->{$1} = $d->{$file};
+		    }
+		}
+		close FILE;
+	    }
+	    delete $d->{$file} if $key ne '-default';
+	}
+    }
+
+    load_repo_config($repo) if $key eq '-default';
 }
 
 sub check_what_changed {
-  my ($old, $new) = @_;
+    my ($old, $new) = @_;
 
-  # diff with empty tree if there's no previous commit
-  $old = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' if !$old || $old =~ /^0+$/;
+    # diff with empty tree if there's no previous commit
+    $old = '4b825dc642cb6eb9a060e54bf8d69288fbee4904' if !$old || $old =~ /^0+$/;
 
-  $_ = git "diff --raw ". ($new ? "$old..$new" : $old);
+    $_ = git "diff --raw ". ($new ? "$old..$new" : $old);
 
-  # parse diff output, add only valid zone names to %files for parsing
-  $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
+    # parse diff output, add only valid zone names to %files for parsing
+    $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
 }
 
 sub process_files {
-  $files{$_} = 0 for @_;
-  process_file($_) for keys %files;
-  check_zones();
+    $files{$_} = 0 for @_;
+    process_file($_) for keys %files;
+    check_zones();
 
-  if (@changed_files) {
-    print "adding changed files: @changed_files\n" if $verbosity >= 2;
-    git "add @changed_files";
-  }
+    if (@changed_files) {
+	print "adding changed files: @changed_files\n" if $verbosity >= 2;
+	git "add @changed_files";
+    }
 }
 
 sub process_file {
-  my ($file, $depth) = @_;
-  my (@newfile, $changed, @inc_by);
-  print ">> process_file($file)\n" if $verbosity >= 3;
+    my ($file, $depth) = @_;
+    my (@newfile, $changed, @inc_by);
+    print ">> process_file($file)\n" if $verbosity >= 3;
 
-  return 0 if $files{$file}; # already processed
-  return -1 unless -f $file;
+    return 0 if $files{$file}; # already processed
+    return -1 unless -f $file;
 
-  print ">>> processing $file\n" if $verbosity >= 3;
-  $files{$_}++;
+    print ">>> processing $file\n" if $verbosity >= 3;
+    $files{$_}++;
 
-  open FILE, '<', $file or die $!;
-  my $n = 0;
-  while (<FILE>) {
-    $n++;
-    my $line = $_;
-    if (/^(.*)(\b\d+\b)(.*?;AUTO_INCREMENT\b.*)$/) {
-      # increment serial where marked with ;AUTO_INCREMENT
-      # if length of serial is 10 and starts with 20 treat it as a date
-      my ($a,$s,$z) = ($1,int $2,$3);
-      $date ||= strftime '%Y%m%d', localtime;
-      $s = ($s =~ /^$date/ || $s < 2000000000 || $s >= 2100000000) ? $s + 1 : $date.'00';
-      $line = "$a$s$z\n";
-      $changed = 1;
-    } elsif (/^(\s*\$INCLUDE\s+)(\S+)(.*)$/) {
-      my ($a,$inc_file,$z) = ($1,$2,$3);
-      unless ($unrestricted_includes) {
-        # check $INCLUDE lines for files outside the repo dir
-        unless ($inc_file =~ m,^$repo/, && $inc_file !~ /\.\./) {
-          close FILE;
-          die "Error in $file:$n: invalid included file name, it should start with: $repo/\n";
-        }
-      }
-    } else {
-      if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
-        @inc_by = split /\s+/, $1;
-      }
+    open FILE, '<', $file or die $!;
+    my $n = 0;
+    while (<FILE>) {
+	$n++;
+	my $line = $_;
+	if (/^(.*)(\b\d+\b)(.*?;AUTO_INCREMENT\b.*)$/) {
+	    # increment serial where marked with ;AUTO_INCREMENT
+	    # if length of serial is 10 and starts with 20 treat it as a date
+	    my ($a,$s,$z) = ($1,int $2,$3);
+	    $date ||= strftime '%Y%m%d', localtime;
+	    $s = ($s =~ /^$date/ || $s < 2000000000 || $s >= 2100000000) ? $s + 1 : $date.'00';
+	    $line = "$a$s$z\n";
+	    $changed = 1;
+	} elsif (/^(\s*\$INCLUDE\s+)(\S+)(.*)$/) {
+	    my ($a,$inc_file,$z) = ($1,$2,$3);
+	    unless ($unrestricted_includes) {
+		# check $INCLUDE lines for files outside the repo dir
+		unless ($inc_file =~ m,^$repo/, && $inc_file !~ /\.\./) {
+		    close FILE;
+		    die "Error in $file:$n: invalid included file name, it should start with: $repo/\n";
+		}
+	    }
+	} else {
+	    if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
+		@inc_by = split /\s+/, $1;
+	    }
+	}
+	push @newfile, $line;
     }
-    push @newfile, $line;
-  }
-  close FILE;
-
-  if ($changed) {
-    print ">>> $file changed, saving\n" if $verbosity >= 3;
-
-    open FILE, '>', $file or die $!;
-    print FILE for @newfile;
     close FILE;
 
-    push @changed_files, $file;
-  }
+    if ($changed) {
+	print ">>> $file changed, saving\n" if $verbosity >= 3;
 
-  if ($depth++ < $max_depth) {
-    process_file($_, $depth) for @inc_by;
-  } else {
-    print "Warning: ;INCLUDED_BY is followed only up to $max_depth levels,\n".
-          "  the following files are not reloaded: @inc_by\n";
-  }
+	open FILE, '>', $file or die $!;
+	print FILE for @newfile;
+	close FILE;
 
-  return 1;
+	push @changed_files, $file;
+    }
+
+    if ($depth++ < $max_depth) {
+	process_file($_, $depth) for @inc_by;
+    } else {
+	print "Warning: ;INCLUDED_BY is followed only up to $max_depth levels,\n".
+	    "  the following files are not reloaded: @inc_by\n";
+    }
+
+    return 1;
 }
 
 sub check_zones {
-  print ">> check_zones: ,",%files,"\n" if $verbosity >= 3;
-  for my $file (keys %files) {
-    my ($zone, $dir) = fileparse $file;
-    $zone =~ s/\.signed$//;
-    $dir = substr $dir, 0, -1;
-    # skip files with errors and those that are not in the config
-    next unless $files{$file} > 0 && exists $repos->{$repo}->{$dir}->{$zone};
+    print ">> check_zones: ,",%files,"\n" if $verbosity >= 3;
+    for my $file (keys %files) {
+	my ($zone, $dir) = fileparse $file;
+	$zone =~ s/\.signed$//;
+	$dir = substr $dir, 0, -1;
+	# skip files with errors and those that are not in the config
+	next unless $files{$file} > 0 && exists $repos->{$repo}->{$dir}->{$zone};
 
-    print "Checking zone $zone\n";
-    print `$named_checkzone -w .. '$zone' '$repo/$file'`;
-    clean_exit 1 if $?; # error, reject push
-    push @zones, $file;
-  }
+	print "Checking zone $zone\n";
+	print `$named_checkzone -w .. '$zone' '$repo/$file'`;
+	clean_exit 1 if $?; # error, reject push
+	push @zones, $file;
+    }
 }
 
 sub save_list_file {
-  if (@zones) {
-    print "Zone check passed: @zones\n";
-    # save changed zone list for post-receive hook
-    open FILE, '>>', $list_file or die $!;
-    print FILE join(' ', @zones), "\n";
-    close FILE;
-  } else {
-    print "No zones to reload\n";
-  }
+    if (@zones) {
+	print "Zone check passed: @zones\n";
+	# save changed zone list for post-receive hook
+	open FILE, '>>', $list_file or die $!;
+	print FILE join(' ', @zones), "\n";
+	close FILE;
+    } else {
+	print "No zones to reload\n";
+    }
 }
 
 sub load_list_file {
-  return unless -f $list_file;
-  my %zones;
-  open FILE, '<', $list_file or die $!;
-  while (<FILE>) {
-    $zones{$_} = 1 for split /[\s\n\r]+/;
-  }
-  close FILE;
-  @zones = keys %zones;
+    return unless -f $list_file;
+    my %zones;
+    open FILE, '<', $list_file or die $!;
+    while (<FILE>) {
+	$zones{$_} = 1 for split /[\s\n\r]+/;
+    }
+    close FILE;
+    @zones = keys %zones;
 }
 
 sub install_zones {
-  print "Reloading changed zones: @zones\n";
+    print "Reloading changed zones: @zones\n";
 
-  my $cwd = cwd;
+    my $cwd = cwd;
 
-  chdir "$zone_dir/$repo" or die $!;
-  git "clone $cwd ." unless -d '.git';
-  git 'fetch';
-  git 'reset --hard remotes/origin/master';
+    chdir "$zone_dir/$repo" or die $!;
+    git "clone $cwd ." unless -d '.git';
+    git 'fetch';
+    git 'reset --hard remotes/origin/master';
 
-  for my $file (@zones) {
-    my ($zone, $dir) = fileparse $file;
-    $zone =~ s/\.signed$//;
-    $dir = substr $dir, 0, -1;
-    my $view = $repos->{$repo}->{$dir}->{$zone};
-    print "$_/$zone: ", `$rndc reload '$zone' $class $_` for @$view;
-  }
+    for my $file (@zones) {
+	my ($zone, $dir) = fileparse $file;
+	$zone =~ s/\.signed$//;
+	$dir = substr $dir, 0, -1;
+	my $view = $repos->{$repo}->{$dir}->{$zone};
+	print "$_/$zone: ", `$rndc reload '$zone' $class $_` for @$view;
+    }
 
-  unlink $list_file;
+    unlink $list_file;
 }
 
 # save working dir state
 # (git stash wouldn't work without conflicts if there's a
 # change in both the index & working tree in the same file)
 sub stash_save {
-  $stash_file = File::Temp::tempnam('.git', '.gitzone-stash-');
-  print "Saving working tree to $stash_file\n";
-  git "update-index --refresh -q", 0, -1;
-  git "diff >$stash_file";
-  git 'checkout .';
+    $stash_file = File::Temp::tempnam('.git', '.gitzone-stash-');
+    print "Saving working tree to $stash_file\n";
+    git "update-index --refresh -q", 0, -1;
+    git "diff >$stash_file";
+    git 'checkout .';
 }
 
 # restore working dir
 sub stash_pop {
-  print "Restoring working tree from $stash_file\n";
-  git "apply --reject --whitespace=nowarn $stash_file", 1, -1;
-  unlink $stash_file unless $?;
+    print "Restoring working tree from $stash_file\n";
+    git "apply --reject --whitespace=nowarn $stash_file", 1, -1;
+    unlink $stash_file unless $?;
 }
 
 sub pre_receive {
-  my ($old, $new, $ref);
+    my ($old, $new, $ref);
 
-  while (<STDIN>) { # <old-value> SP <new-value> SP <ref-name> LF
-    print if $verbosity >= 1;
-    next unless m,(\w+) (\w+) ([\w/]+),;
-    next if $3 ne 'refs/heads/master'; # only process master branch
-    die "Denied branch 'new', choose another name\n" if $3 eq 'refs/head/new';
-    ($old, $new, $ref) = ($1, $2, $3);
-  }
+    while (<STDIN>) { # <old-value> SP <new-value> SP <ref-name> LF
+	print if $verbosity >= 1;
+	next unless m,(\w+) (\w+) ([\w/]+),;
+	next if $3 ne 'refs/heads/master'; # only process master branch
+	die "Denied branch 'new', choose another name\n" if $3 eq 'refs/head/new';
+	($old, $new, $ref) = ($1, $2, $3);
+    }
 
-  # nothing for master branch, exit
-  clean_exit 0 unless $ref;
+    # nothing for master branch, exit
+    clean_exit 0 unless $ref;
 
-  # checkout changes
-  git "checkout -qf $new";
-  check_what_changed($old, $new);
-  load_repo_config;
-  process_files;
-  git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
-  save_list_file;
+    # checkout changes
+    git "checkout -qf $new";
+    check_what_changed($old, $new);
+    load_repo_config;
+    process_files;
+    git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
+    save_list_file;
 
-  # save new commits in a new branch
-  git 'checkout -B new';
+    # save new commits in a new branch
+    git 'checkout -B new';
 }
 
 sub pre_commit {
-  stash_save;
+    stash_save;
 
-  $cleanup = sub {
-    # reset any changes, e.g. auto inc.
-    git 'checkout .';
-    stash_pop;
-  };
+    $cleanup = sub {
+	# reset any changes, e.g. auto inc.
+	git 'checkout .';
+	stash_pop;
+    };
 
-  git 'rev-parse --verify HEAD', 0, -1;
-  check_what_changed($? ? undef : 'HEAD');
-  load_repo_config;
-  process_files;
+    git 'rev-parse --verify HEAD', 0, -1;
+    check_what_changed($? ? undef : 'HEAD');
+    load_repo_config;
+    process_files;
 
-  $cleanup = sub {
-    stash_pop;
-  };
+    $cleanup = sub {
+	stash_pop;
+    };
 
-  save_list_file;
+    save_list_file;
 }
 
 sub post_receive {
-  print "\n";
+    print "\n";
 
-  # move master to new
-  git 'checkout -f master';
-  git 'reset --hard new';
+    # move master to new
+    git 'checkout -f master';
+    git 'reset --hard new';
 
-  load_repo_config;
-  load_list_file;
-  install_zones;
+    load_repo_config;
+    load_list_file;
+    install_zones;
 
-  print "Done. Don't forget to pull if you use auto increment.\n";
+    print "Done. Don't forget to pull if you use auto increment.\n";
 }
 
 sub post_commit {
-  print "\n";
+    print "\n";
 
-  load_repo_config;
-  load_list_file;
-  install_zones;
-  print "Done.\n";
+    load_repo_config;
+    load_list_file;
+    install_zones;
+    print "Done.\n";
 }
 
 sub update_record {
-  my ($c, $file, @record) = split /\s+/, shift;
-  my ($ip) = $ENV{SSH_CLIENT} =~ /^([\d.]+|[a-f\d:]+)\s/i or die "Invalid IP address\n";
-  my $re = qr/^\s*/i;
-  $re = qr/$re$_\s+/i for (@record);
-  my $matched = 0;
-  my $changed = 0;
-  my @newfile;
+    my ($c, $file, @record) = split /\s+/, shift;
+    my ($ip) = $ENV{SSH_CLIENT} =~ /^([\d.]+|[a-f\d:]+)\s/i or die "Invalid IP address\n";
+    my $re = qr/^\s*/i;
+    $re = qr/$re$_\s+/i for (@record);
+    my $matched = 0;
+    my $changed = 0;
+    my @newfile;
 
-  git 'checkout -f master';
+    git 'checkout -f master';
 
-  open FILE, '<', $file or die "$file: $!";
-  while (<FILE>) {
-    my $line = $_;
-    if (!$matched && s/($re)([\d.]+|[a-f\d:]+)/$1$ip/i) {
-      print "Matched record:\n$line";
-      $matched = 1;
-      if ($line ne "$1$ip\n") {
-        $changed = 1;
-        $line = "$1$ip\n";
-        print "Updating it with:\n$line";
-      } else {
-        print "Not updating: already up-to-date\n";
-        close FILE;
-        clean_exit 0;
-      }
+    open FILE, '<', $file or die "$file: $!";
+    while (<FILE>) {
+	my $line = $_;
+	if (!$matched && s/($re)([\d.]+|[a-f\d:]+)/$1$ip/i) {
+	    print "Matched record:\n$line";
+	    $matched = 1;
+	    if ($line ne "$1$ip\n") {
+		$changed = 1;
+		$line = "$1$ip\n";
+		print "Updating it with:\n$line";
+	    } else {
+		print "Not updating: already up-to-date\n";
+		close FILE;
+		clean_exit 0;
+	    }
+	}
+	push @newfile, $line;
     }
-    push @newfile, $line;
-  }
-  close FILE;
-  die "No matching record in $file: @record\n" unless $matched;
+    close FILE;
+    die "No matching record in $file: @record\n" unless $matched;
 
-  open FILE, '>', $file or die $!;
-  print FILE for @newfile;
-  close FILE;
+    open FILE, '>', $file or die $!;
+    print FILE for @newfile;
+    close FILE;
 
-  git "commit -nm 'update-record: $file' '$file'", 1;
+    git "commit -nm 'update-record: $file' '$file'", 1;
 
-  load_repo_config;
-  process_files $file;
-  git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
-  install_zones if @zones;
+    load_repo_config;
+    process_files $file;
+    git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
+    install_zones if @zones;
 }

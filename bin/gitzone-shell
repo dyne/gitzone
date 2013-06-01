@@ -34,35 +34,35 @@ git=/usr/bin/git
 grep=/bin/grep
 
 function error {
-  echo "fatal: What do you think I am? A shell?"
-  exit 128
+    echo "fatal: What do you think I am? A shell?"
+    exit 128
 }
 
 if [ "$1" != "-c" ]; then error; fi
 cmd=$2
 
 if [[ "$cmd" == git-upload-pack* ]]; then
-  $git upload-pack $repo_dir/$repo
+    $git upload-pack $repo_dir/$repo
 elif [[ "$cmd" == git-receive-pack* ]]; then
-  $git receive-pack $repo_dir/$repo
+    $git receive-pack $repo_dir/$repo
 elif [[ "$cmd" == update-record* ]]; then
-  cd $repo_dir/$repo/.git
-  $gitzone $config update-record "$cmd"
+    cd $repo_dir/$repo/.git
+    $gitzone $config update-record "$cmd"
 elif [ -f $allow_key_mgmt_file ]; then
-  if [ "$cmd" == list-keys ]; then
-    cat .ssh/authorized_keys
-  elif [[ "$cmd" == add-key* ]]; then
-    key="${cmd:8}"
-    echo "$key" >> .ssh/authorized_keys && \
-      echo "key added"
-  elif [[ "$cmd" == del-key* ]]; then
-    key="${cmd:8}"
-    $grep -v "$key" .ssh/authorized_keys > .ssh/authorized_keys-new && \
-      mv .ssh/authorized_keys-new .ssh/authorized_keys && \
-      echo "key deleted"
-  else
-    error
-  fi
+    if [ "$cmd" == list-keys ]; then
+        cat .ssh/authorized_keys
+    elif [[ "$cmd" == add-key* ]]; then
+        key="${cmd:8}"
+        echo "$key" >> .ssh/authorized_keys && \
+            echo "key added"
+    elif [[ "$cmd" == del-key* ]]; then
+        key="${cmd:8}"
+        $grep -v "$key" .ssh/authorized_keys > .ssh/authorized_keys-new && \
+            mv .ssh/authorized_keys-new .ssh/authorized_keys && \
+            echo "key deleted"
+    else
+        error
+    fi
 else
-  error
+    error
 fi
