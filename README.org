@@ -33,7 +33,7 @@ key management.
   : # git init $user
   : # cd $user
   : # git config receive.denyCurrentBranch ignore
-  : # cd hooks
+  : # cd .git/hooks
   : # ln -s /usr/libexec/gitzone/pre-receive
   : # ln -s /usr/libexec/gitzone/post-receive
 
