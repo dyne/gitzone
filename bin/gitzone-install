@@ -59,19 +59,25 @@ usermod -aG bind $user
 # add gitzone cache dir
 mkdir -p /var/cache/bind/$user
 chown $user:bind /var/cache/bind/$user
+chmod o-rwx /var/cache/bind/$user
 
 touch /etc/bind/named.conf.local
 grep "${user}.conf" /etc/bind/named.conf.local > /dev/null
 if ! [ $? = 0 ]; then
     cat <<EOF >> /etc/bind/named.conf.local
-include "/etc/bind/repos/${user}.conf"
+include "/etc/bind/repos/${user}.conf";
 EOF
 fi
 
 # success
-echo "Gitzone installed for user $user"
-echo "git repository url (via ssh)"
-echo "$user@`hostname -f`:zones/$user"
+cat <<EOF
+
+### Gitzone installed for user $user
+## git repository url (via ssh):
+
+  $user@`hostname -f`:zones/$user
+
+EOF
 
 fi # gitzone created
 
@@ -88,9 +94,6 @@ zone "domain.com" {
 };
 
 Then restart the bind9 daemon.
-
-2) in /etc/bind/named.conf.local add a line:
-include "/etc/bind/repos/${user}.conf";
 EOF
 
 
