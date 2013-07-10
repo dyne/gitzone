@@ -33,7 +33,7 @@ gitzone=/usr/bin/gitzone
 git=/usr/bin/git
 grep=/bin/grep
 
-function error {
+error() {
     echo "fatal: What do you think I am? A shell?"
     exit 128
 }
