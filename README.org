@@ -16,7 +16,37 @@ gitzone-shell is similar to git-shell but it restricts the user to the zones
 repository and provides some additional commands for dynamic DNS updates & SSH
 key management. To use it the Z shell must be installed (zsh).
 
-* Installation
+* Installation (semi-automatic)
+
+Gitzone comes with a relatively simple script: gitzone-install
+whose usage is self-descriptive:
+
+  : # gitzone-install username [ id_rsa.pub ]
+
+First argument is a user on the machine which will be the user in the git url.
+
+Second argument is the first public ssh key which will have write permissions to change zones
+(it is optional and can be added later)
+
+So first install bind9 (not covered by this documentation),
+then create your user and then run the script with all the arguments in place.
+
+Then create /etc/bind/repos/${user}.conf and put inside:
+
+: zone "domain.com" {
+:	type master;
+:	notify yes;
+:	file "/var/cache/bind/$user/domain.com";
+:	allow-transfer { transfer; };
+: };
+
+Then restart the bind9 daemon.
+
+Gitzone can be installed on multiple users on the same machine,
+this way there can be different admins (or groups of admins)
+for different zones all on the same machine.
+
+* Installation (manual)
 
 - set PREFIX in Makefile and make sure the paths in the hooks are correct, then
   : # make install
