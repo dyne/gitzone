@@ -14,7 +14,7 @@ server.
 
 gitzone-shell is similar to git-shell but it restricts the user to the zones
 repository and provides some additional commands for dynamic DNS updates & SSH
-key management.
+key management. To use it the Z shell must be installed (zsh).
 
 * Installation
 
