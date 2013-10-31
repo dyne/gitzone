@@ -4,49 +4,100 @@
 #+INFOJS_OPT: view:showall ltoc:nil
 #+STYLE: <style>html{max-width:1000px}</style>
 
+#+LATEX_HEADER: \usepackage{lmodern}
+#+LATEX_HEADER: \usepackage{fullpage}
+
 * About
 
-gitzone is a git-based zone file management tool for BIND. Users can update
+Gitzone is a git-based zone file management tool for BIND. Users can update
 their zones in a git repository then during a push the zone files are checked,
 updated & reloaded from git receive hooks. If there's an error in a file being
 pushed then the push is rejected, thus only correct files are stored on the
-server.
+server. Gitzone is written in Perl.
 
-gitzone-shell is similar to git-shell but it restricts the user to the zones
-repository and provides some additional commands for dynamic DNS updates & SSH
-key management. To use it the Z shell must be installed (zsh).
+Gitzone-shell is similar to git-shell but it restricts the user to the
+zones repository and provides some additional commands for dynamic DNS
+updates & SSH key management. Gitzone-shell and the Gitzone-install
+scripts are written in Zsh shell script.
+
+#+LATEX: \pagebreak
+
 
 * Installation (semi-automatic)
 
-Gitzone comes with a relatively simple script: gitzone-install
-whose usage is self-descriptive:
+First install Bind9 (not covered by this documentation).
 
-  : # gitzone-install username [ id_rsa.pub ]
+Then install all scripts in the prefix /bin path and /libexec
 
-First argument is a user on the machine which will be the user in the git url.
+  : # make install
 
-Second argument is the first public ssh key which will have write permissions to change zones
-(it is optional and can be added later)
+Once the binaries are in place, to enable gitzone for a user there is
+a relatively simple script: gitzone-install. Usage synopsis:
 
-So first install bind9 (not covered by this documentation),
-then create your user and then run the script with all the arguments in place.
+  : # gitzone-install username id_rsa.pub
+
+This script assumes that a user with 'username' (first argument)
+already exists: anyone with access to this user will be in control of
+gitzone, since access is managed via ssh authentication.
+
+Second argument is the first public ssh key which will have write
+permissions to change zones (more keys can be added later).
+
+If you intend to use the dynamic DNS feature via the gitzone-shell,
+then you'd better create a specific user only for gitzone.
+
+Once ready, run the script with all the arguments in place.
 
 Then create /etc/bind/repos/${user}.conf and put inside:
 
-: zone "domain.com" {
-:	type master;
-:	notify yes;
-:	file "/var/cache/bind/$user/domain.com";
-:	allow-transfer { transfer; };
-: };
+#+BEGIN_EXAMPLE
+zone "domain.com" {
+	type master;
+	notify yes;
+	file "/var/cache/bind/$user/domain.com";
+	allow-transfer { transfer; };
+};
+#+END_EXAMPLE
 
-Then restart the bind9 daemon.
+Where 'domain.com' is the first domain you are managing with
+gitzone. There can be more domains and for each of them the above
+configuration section must be created.
+
+Now clone the gitzone repository from another user that has access to
+the ssh secret key configured in gitzone-install. The git url will be
+composed of the hostname of the machine where is has been installed
+and the username chosen:
+
+: git clone username@ns.myown.net:zones/username gitzone-admin
+
+The command above will clone the new gitzone repository into a
+directory gitzone-admin. If you aren't familiar with git, this is a
+good time to go study it.
+
+Create a file named 'domain.com' inside gitzone-admin and fill it in
+as a canonical DNS zone file for bind9. Then add, commit and push:
+
+#+BEGIN_EXAMPLE
+cd gitzone-admin; vim domain.com
+ (edit the zone file according to bind9 documentation)
+git add domain.com
+git commit -m "initial zone commit for domain.com"
+git push
+#+END_EXAMPLE
+
+If the domain.com file contains any errors, gitzone will not accept
+the push and will report an error among the screen messages.
+ 
+
+If all went well, restart the bind9 daemon and you'll see that the
+zone for domain.com is served by your new DNS. One can check using
+nslookup.
 
 Gitzone can be installed on multiple users on the same machine,
 this way there can be different admins (or groups of admins)
 for different zones all on the same machine.
 
-* Installation (manual)
+* Installation (in close detail)
 
 - set PREFIX in Makefile and make sure the paths in the hooks are correct, then
   : # make install
