@@ -49,7 +49,7 @@ elif [[ "$cmd" == update-record* ]]; then
     cd $repo_dir/$repo/.git
     $gitzone $config update-record "$cmd"
 elif [ -f $allow_key_mgmt_file ]; then
-    if [ "$cmd" == list-keys ]; then
+    if [[ "$cmd" == list-keys ]]; then
         cat .ssh/authorized_keys
     elif [[ "$cmd" == add-key* ]]; then
         key="${cmd:8}"
