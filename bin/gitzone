@@ -306,7 +306,7 @@ sub pre_receive {
     save_list_file;
 
     # save new commits in a new branch
-    git 'branch -f  []';
+    git 'branch -f  new';
     git 'checkout';
     # was: git 'checkout -B new';
     # removed for back-compat with old git
