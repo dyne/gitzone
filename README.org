@@ -183,8 +183,9 @@ The following SSH commands are provided by gitzone-shell:
   record in the given file to the SSH client's IP address.
   : % ssh ns.example.net update-record example.net somehost IN A
 
-- SSH key management commands, to use these =touch
-  .ssh/authorized_keys_edit_enabled= in the users' home directories.
+- SSH key management commands, to use these do:
+  : touch .ssh/authorized_keys_edit_allowed
+  in the users' home directories.
 
   - =list-keys=: list added ssh keys
     : % ssh ns.example.net list-keys
