@@ -373,6 +373,17 @@ sub post_receive {
 
     load_repo_config;
     load_list_file;
+
+    # Go through and process the files again, this time allowing changes.
+    # All of the AUTO_INCREMENT stuff happens here.
+    # The zone files are checked a second time as well.
+    process_files;
+
+    # Commit any auto increment changes.
+    if (@changed_files) {
+	git "commit -nm 'auto increment: @changed_files'", 1;
+    }
+
     install_zones;
 
     print "Done. Don't forget to pull if you use auto increment.\n";
