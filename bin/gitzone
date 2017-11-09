@@ -321,13 +321,10 @@ sub pre_receive {
     check_what_changed($old, $new);
     load_repo_config;
     process_files;
-    save_list_file;
 
-    # save new commits in a new branch
-    git 'branch -f  new';
-    git 'checkout';
-    # was: git 'checkout -B new';
-    # removed for back-compat with old git
+
+    # Save the file list, this is of questionable value at this point.
+    save_list_file;
 }
 
 sub pre_commit {
