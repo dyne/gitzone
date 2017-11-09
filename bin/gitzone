@@ -312,8 +312,13 @@ sub pre_receive {
     File::Path->remove_tree($tmp_dir, verbose => 1);
     File::Path->make_path($tmp_dir, verbose => 1);
 
-    # checkout changes
-    git "checkout -qf $new";
+    # Extract the new commit.
+    # We do this with git archive, and then extract the resulting tar in the temporary directory.
+    # There really should be a better way to do this, but I can't find one.
+    git "archive $new | tar -C $tmp_dir -xf -";
+
+    # chdir into the temporary directory.
+    chdir $tmp_dir or die $!;
 
     # Go read only, no actual changes in the pre-release hook.
     $read_only = 1;
@@ -322,6 +327,8 @@ sub pre_receive {
     load_repo_config;
     process_files;
 
+    # Go back to the repo.
+    chdir $base_cwd;
 
     # Save the file list, this is of questionable value at this point.
     save_list_file;
