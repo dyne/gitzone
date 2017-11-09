@@ -396,6 +396,7 @@ sub post_receive {
 	git "commit -nm 'auto increment: @changed_files'", 1;
     }
 
+    # Actually install the new zone files.
     install_zones;
 
     print "Done. Don't forget to pull if you use auto increment.\n";
