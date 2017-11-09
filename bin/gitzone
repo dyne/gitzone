@@ -31,6 +31,8 @@ use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
 use File::Basename qw/fileparse basename/;
 use File::Temp;
+use File::Path;
+use File::Spec;
 
 @ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
 chdir '.git' if -d '.git';
@@ -297,6 +299,18 @@ sub pre_receive {
 
     # nothing for master branch, exit
     clean_exit 0 unless $ref;
+
+    # Figure out the paths for the repo, and the temporary checkout location.
+    my $base_cwd = cwd;
+    my @dir = File::Spec->splitdir($base_cwd);
+    my $repo_name = $dir[$#dir];
+    $dir[$#dir] .= '_tmp';
+    push(@dir, $repo_name);
+    my $tmp_dir = join('/', @dir);
+
+    # Make the temporary directory from scratch.
+    File::Path->remove_tree($tmp_dir, verbose => 1);
+    File::Path->make_path($tmp_dir, verbose => 1);
 
     # checkout changes
     git "checkout -qf $new";
