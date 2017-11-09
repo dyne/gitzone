@@ -179,9 +179,15 @@ sub process_file {
 		    die "Error in $file:$n: invalid included file name, it should start with: $repo/\n";
 		}
 	    }
+
+	    # Try and feed INCLUDE files with relative path names into the list.
+	    # This should allow having a common header with an AUTO_INCREMENTed serial number.
+	    if ($inc_file =~ m|^$repo/(.*)|) {
+		push (@inc_by, $1);
+	    }
 	} else {
 	    if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
-		@inc_by = split /\s+/, $1;
+		push(@inc_by, split /\s+/, $1);
 	    }
 	}
 	push @newfile, $line;
