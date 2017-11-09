@@ -314,10 +314,13 @@ sub pre_receive {
 
     # checkout changes
     git "checkout -qf $new";
+
+    # Go read only, no actual changes in the pre-release hook.
+    $read_only = 1;
+
     check_what_changed($old, $new);
     load_repo_config;
     process_files;
-    git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
     save_list_file;
 
     # save new commits in a new branch
