@@ -399,7 +399,11 @@ sub post_receive {
     # Actually install the new zone files.
     install_zones;
 
-    print "Done. Don't forget to pull if you use auto increment.\n";
+    if (@changed_files) {
+	print "Done. Auto increment applied, don't forget to pull.\n";
+    } else {
+	print "Done.\n";
+    }
 }
 
 sub post_commit {
