@@ -367,9 +367,8 @@ sub post_receive {
 
     print "\n";
 
-    # move master to new
+    # Grab the current master.
     git 'checkout -f master';
-    git 'reset --hard new';
 
     load_repo_config;
     load_list_file;
