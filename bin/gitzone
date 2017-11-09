@@ -349,6 +349,22 @@ sub pre_commit {
 }
 
 sub post_receive {
+    my ($old, $new, $ref);
+
+    while (<STDIN>) { # <old-value> SP <new-value> SP <ref-name> LF
+	print if $verbosity >= 1;
+	next unless m,(\w+) (\w+) ([\w/]+),;
+	next if $3 ne 'refs/heads/master'; # only process master branch
+	die "Denied branch 'new', choose another name\n" if $3 eq 'refs/head/new';
+	($old, $new, $ref) = ($1, $2, $3);
+    }
+
+    # nothing for master branch, exit
+    clean_exit 0 unless $ref;
+
+    # Repeat the check_what_changed from the pre_receive.
+    check_what_changed($old, $new);
+
     print "\n";
 
     # move master to new
