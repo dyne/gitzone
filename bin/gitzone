@@ -39,6 +39,7 @@ basename(realpath) eq '.git' or die "gitzone has to be run from a .git directory
 my $lock_file = realpath '.gitzone-lock';
 my $list_file = realpath '.gitzone-list';
 my $stash_file;
+my $read_only = 0;
 chdir '..';
 
 our $user = getpwuid $<;
@@ -137,7 +138,7 @@ sub process_files {
     process_file($_) for keys %files;
     check_zones();
 
-    if (@changed_files) {
+    if (@changed_files && !$read_only) {
 	print "adding changed files: @changed_files\n" if $verbosity >= 2;
 	git "add @changed_files";
     }
@@ -185,7 +186,7 @@ sub process_file {
     }
     close FILE;
 
-    if ($changed) {
+    if ($changed && !$read_only) {
 	print ">>> $file changed, saving\n" if $verbosity >= 3;
 
 	open FILE, '>', $file or die $!;
