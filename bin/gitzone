@@ -335,9 +335,6 @@ sub pre_receive {
 
     # Go back to the repo.
     chdir $base_cwd;
-
-    # Save the file list, this is of questionable value at this point.
-    save_list_file;
 }
 
 sub pre_commit {
@@ -384,7 +381,6 @@ sub post_receive {
     git 'checkout -f master';
 
     load_repo_config;
-    load_list_file;
 
     # Go through and process the files again, this time allowing changes.
     # All of the AUTO_INCREMENT stuff happens here.
