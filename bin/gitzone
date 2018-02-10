@@ -314,6 +314,10 @@ sub pre_receive {
     push(@dir, $repo_name);
     my $tmp_dir = join('/', @dir);
 
+    # Do the diff and find out exactly what changed.
+    # This must be done before the chdir below.
+    check_what_changed($old, $new);
+
     # Make the temporary directory from scratch.
     File::Path->remove_tree($tmp_dir, verbose => 1);
     File::Path->make_path($tmp_dir, verbose => 1);
@@ -329,7 +333,6 @@ sub pre_receive {
     # Go read only, no actual changes in the pre-release hook.
     $read_only = 1;
 
-    check_what_changed($old, $new);
     load_repo_config;
     process_files;
 
