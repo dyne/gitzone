@@ -31,6 +31,8 @@ use POSIX qw/strftime/;
 use Cwd qw/cwd realpath/;
 use File::Basename qw/fileparse basename/;
 use File::Temp;
+use File::Path;
+use File::Spec;
 
 @ARGV >= 2 or die "Usage: gitzone /path/to/gitzone.conf <command>\n";
 chdir '.git' if -d '.git';
@@ -39,6 +41,7 @@ basename(realpath) eq '.git' or die "gitzone has to be run from a .git directory
 my $lock_file = realpath '.gitzone-lock';
 my $list_file = realpath '.gitzone-list';
 my $stash_file;
+my $read_only = 0;
 chdir '..';
 
 our $user = getpwuid $<;
@@ -129,7 +132,7 @@ sub check_what_changed {
     }
 
     # parse diff output, add only valid zone names to %files for parsing
-    $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}([a-z0-9./-]+)$,gm;
+    $files{$1} = 0 while m,^:(?:[\w.]+\s+){5}(?:[A-Za-z0-9./-]+\s+)?([A-Za-z0-9./-]+)$,gm;
 }
 
 sub process_files {
@@ -137,7 +140,7 @@ sub process_files {
     process_file($_) for keys %files;
     check_zones();
 
-    if (@changed_files) {
+    if (@changed_files && !$read_only) {
 	print "adding changed files: @changed_files\n" if $verbosity >= 2;
 	git "add @changed_files";
     }
@@ -176,16 +179,22 @@ sub process_file {
 		    die "Error in $file:$n: invalid included file name, it should start with: $repo/\n";
 		}
 	    }
+
+	    # Try and feed INCLUDE files with relative path names into the list.
+	    # This should allow having a common header with an AUTO_INCREMENTed serial number.
+	    if ($inc_file =~ m|^$repo/(.*)|) {
+		push (@inc_by, $1);
+	    }
 	} else {
 	    if ($n == 1 && /^;INCLUDED_BY\s+(.*)$/) {
-		@inc_by = split /\s+/, $1;
+		push(@inc_by, split /\s+/, $1);
 	    }
 	}
 	push @newfile, $line;
     }
     close FILE;
 
-    if ($changed) {
+    if ($changed && !$read_only) {
 	print ">>> $file changed, saving\n" if $verbosity >= 3;
 
 	open FILE, '>', $file or die $!;
@@ -297,19 +306,38 @@ sub pre_receive {
     # nothing for master branch, exit
     clean_exit 0 unless $ref;
 
-    # checkout changes
-    git "checkout -qf $new";
+    # Figure out the paths for the repo, and the temporary checkout location.
+    my $base_cwd = cwd;
+    my @dir = File::Spec->splitdir($base_cwd);
+    my $repo_name = $dir[$#dir];
+    $dir[$#dir] .= '_tmp';
+    push(@dir, $repo_name);
+    my $tmp_dir = join('/', @dir);
+
+    # Do the diff and find out exactly what changed.
+    # This must be done before the chdir below.
     check_what_changed($old, $new);
+
+    # Make the temporary directory from scratch.
+    File::Path->remove_tree($tmp_dir, verbose => 1);
+    File::Path->make_path($tmp_dir, verbose => 1);
+
+    # Extract the new commit.
+    # We do this with git archive, and then extract the resulting tar in the temporary directory.
+    # There really should be a better way to do this, but I can't find one.
+    git "archive $new | tar -C $tmp_dir -xf -";
+
+    # chdir into the temporary directory.
+    chdir $tmp_dir or die $!;
+
+    # Go read only, no actual changes in the pre-release hook.
+    $read_only = 1;
+
     load_repo_config;
     process_files;
-    git "commit -nm 'auto increment: @changed_files'", 1 if @changed_files;
-    save_list_file;
 
-    # save new commits in a new branch
-    git 'branch -f  new';
-    git 'checkout';
-    # was: git 'checkout -B new';
-    # removed for back-compat with old git
+    # Go back to the repo.
+    chdir $base_cwd;
 }
 
 sub pre_commit {
@@ -334,17 +362,47 @@ sub pre_commit {
 }
 
 sub post_receive {
+    my ($old, $new, $ref);
+
+    while (<STDIN>) { # <old-value> SP <new-value> SP <ref-name> LF
+	print if $verbosity >= 1;
+	next unless m,(\w+) (\w+) ([\w/]+),;
+	next if $3 ne 'refs/heads/master'; # only process master branch
+	die "Denied branch 'new', choose another name\n" if $3 eq 'refs/head/new';
+	($old, $new, $ref) = ($1, $2, $3);
+    }
+
+    # nothing for master branch, exit
+    clean_exit 0 unless $ref;
+
+    # Repeat the check_what_changed from the pre_receive.
+    check_what_changed($old, $new);
+
     print "\n";
 
-    # move master to new
+    # Grab the current master.
     git 'checkout -f master';
-    git 'reset --hard new';
 
     load_repo_config;
-    load_list_file;
+
+    # Go through and process the files again, this time allowing changes.
+    # All of the AUTO_INCREMENT stuff happens here.
+    # The zone files are checked a second time as well.
+    process_files;
+
+    # Commit any auto increment changes.
+    if (@changed_files) {
+	git "commit -nm 'auto increment: @changed_files'", 1;
+    }
+
+    # Actually install the new zone files.
     install_zones;
 
-    print "Done. Don't forget to pull if you use auto increment.\n";
+    if (@changed_files) {
+	print "Done. Auto increment applied, don't forget to pull.\n";
+    } else {
+	print "Done.\n";
+    }
 }
 
 sub post_commit {
