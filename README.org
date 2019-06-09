@@ -17,9 +17,7 @@ server. Gitzone is written in Perl.
 
 Gitzone-shell is similar to git-shell but it restricts the user to the
 zones repository and provides some additional commands for dynamic DNS
-updates & SSH key management. Gitzone-shell and the Gitzone-install
-scripts are written in Zsh shell script.
-
+updates & SSH key management.
 #+LATEX: \pagebreak
 
 

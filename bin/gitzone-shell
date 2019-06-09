@@ -1,8 +1,8 @@
-#!/usr/bin/env zsh
-
+#!/bin/sh
+#
 # gitzone-shell - restrictive shell for gitzone
 #
-# Copyright (C) 2011,2013 Dyne.org Foundation
+# Copyright (C) 2011,2019 Dyne.org Foundation
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU Affero General Public License as published by the Free
@@ -34,35 +34,47 @@ git=/usr/bin/git
 grep=/bin/grep
 
 error() {
-    echo "fatal: What do you think I am? A shell?"
-    exit 128
+	echo "fatal: What do you think I am? A shell?"
+	exit 127
 }
 
 if [ "$1" != "-c" ]; then error; fi
 cmd=$2
 
-if [[ "$cmd" == git-upload-pack* ]]; then
-    $git upload-pack $repo_dir/$repo
-elif [[ "$cmd" == git-receive-pack* ]]; then
-    $git receive-pack $repo_dir/$repo
-elif [[ "$cmd" == update-record* ]]; then
-    cd $repo_dir/$repo/.git
-    $gitzone $config update-record "$cmd"
-elif [ -f $allow_key_mgmt_file ]; then
-    if [[ "$cmd" == list-keys ]]; then
-        cat .ssh/authorized_keys
-    elif [[ "$cmd" == add-key* ]]; then
-        key="${cmd:8}"
-        echo "$key" >> .ssh/authorized_keys && \
-            echo "key added"
-    elif [[ "$cmd" == del-key* ]]; then
-        key="${cmd:8}"
-        $grep -v "$key" .ssh/authorized_keys > .ssh/authorized_keys-new && \
-            mv .ssh/authorized_keys-new .ssh/authorized_keys && \
-            echo "key deleted"
-    else
-        error
-    fi
-else
-    error
+case "$cmd" in
+git-upload-pack*)
+	$git upload-pack "$repo_dir/$repo"
+	exit $?
+	;;
+git-receive-pack*)
+	$git receive-pack "$repo_dir/$repo"
+	exit $?
+	;;
+update-record*)
+	cd "$repo_dir/$repo/.git" || exit 1
+	$gitzone "$config" update-record "$cmd"
+	exit $?
+	;;
+esac
+
+if [ -f "$allow_key_mgmt_file" ]; then
+	case "$cmd" in
+	list-keys)
+		cat .ssh/authorized_keys
+		exit $?
+		;;
+	add-key*)
+		key="$(echo "$cmd" | cut -c9-)"
+		echo "$key" >> .ssh/authorized_keys && echo "key added"
+		exit $?
+		;;
+	del-key*)
+		key="$(echo "$cmd" | cut -c9-)"
+		$grep -v "$key" .ssh/authorized_keys > .ssh/authorized_keys-new || exit 1
+		mv .ssh/authorized_keys-new .ssh/authorized_keys && echo "key deleted"
+		exit $?
+		;;
+	esac
 fi
+
+error
