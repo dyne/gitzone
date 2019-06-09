@@ -2,7 +2,7 @@
 #
 # gitzone - git-based zone file management tool for BIND
 #
-# Copyright (C) 2013 Dyne.org Foundation
+# Copyright (C) 2013,2019 Dyne.org Foundation
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -22,60 +22,66 @@
 # first arg: username
 # secondo (optional) arg: ssh public key
 
-if [ -z $1 ]; then 
-    echo "usage: gitzone-install username [ id_rsa.pub ]";
-    exit 0; fi
+if [ -z "$1" ]; then
+	echo "usage: gitzone-install username [ id_rsa.pub ]";
+	exit 0
+fi
 
-uid="`id -u`"
-if ! [ "$uid" = "0" ]; then
-    echo "this script needs to be run as root."
-    exit 1; fi
+if ! [ "$(id -u)" = 0 ]; then
+	echo "this script needs to be run as root."
+	exit 1
+fi
 
 user="$1"
 
 # check user argument
-grep "^$user" /etc/passwd > /dev/null
-if ! [ $? = 0 ]; then echo "error: user not found: $user"; exit 1; fi
-if ! [ -r /home/$user ]; then echo "error: user home not found: /home/$user"; exit 1; fi
-if [ -r /home/$user/zones/$user/.git ]; then
+if ! grep -q "^$user" /etc/passwd; then
+	echo "error: user not found: $user"
+	exit 1
+fi
+if ! [ -r "/home/$user" ]; then
+	echo "error: user home not found: /home/$user"
+	exit 1
+fi
+if [ -r "/home/$user/zones/$user/.git" ]; then
 	echo "error: gitzone already installed for user $user";
 else # create gitzone directory in user home
+	mkdir -p "/home/$user/zones/$user"
+	cd "/home/$user/zones/$user" || {
+		echo "error: could not cd to /home/$user/zones/$user"
+		exit 1
+	}
+	git init .
+	git config receive.denyCurrentBranch ignore
+	git config user.name "$user"
+	git config user.email "$user@$(hostname -f)"
+	ln -s /usr/libexec/gitzone/*receive* .git/hooks/
+	cd - >/dev/null
+	chown -R "$user:bind" "/home/$user/zones"
+	chmod -R o-rwx "/home/$user/zones"
 
-mkdir -p /home/$user/zones/$user
-cd /home/$user/zones/$user
-git init .
-git config receive.denyCurrentBranch ignore
-name="`cat /etc/passwd | grep '^$user' | cut -d: -f5 | sed 's/,//g'`"
-git config user.name "$user"
-git config user.email "$user@`hostname -f`"
-ln -s /usr/libexec/gitzone/*receive* .git/hooks/
-cd -
-chown -R $user:bind /home/$user/zones
-chmod -R o-rwx /home/$user/zones
+	# add user to bind group
+	usermod -aG bind "$user"
 
-# add user to bind group
-usermod -aG bind $user
+	# add gitzone cache dir
+	mkdir -p "/var/cache/bind/$user"
+	chown "$user:bind" "/var/cache/bind/$user"
+	chmod o-rwx "/var/cache/bind/$user"
 
-# add gitzone cache dir
-mkdir -p /var/cache/bind/$user
-chown $user:bind /var/cache/bind/$user
-chmod o-rwx /var/cache/bind/$user
-
-touch /etc/bind/named.conf.local
-grep "${user}.conf" /etc/bind/named.conf.local > /dev/null
-if ! [ $? = 0 ]; then
-    cat <<EOF >> /etc/bind/named.conf.local
+	touch /etc/bind/named.conf.local
+	if ! grep -q "${user}.conf" /etc/bind/named.conf.local; then
+		cat <<EOF >> /etc/bind/named.conf.local
 include "/etc/bind/repos/${user}.conf";
 EOF
-fi
+	fi
 
 # success
-cat <<EOF
+	cat <<EOF
 
 ### Gitzone installed for user $user
 ## git repository url (via ssh):
 
-  $user@`hostname -f`:zones/$user
+	$user@$(hostname -f):zones/$user
 
 EOF
 
@@ -98,12 +104,16 @@ EOF
 
 
 key="$2" # add ssh key
-if [ -z "$key" ]; then exit 0; fi
-if ! [ -r $key ]; then echo "warning: key not found $key"; exit 1; fi
-mkdir -p /home/$user/.ssh
-touch /home/$user/.ssh/authorized_keys
-cat $key >> /home/$user/.ssh/authorized_keys
-chmod -R go-rwx /home/$user/.ssh
-chown -R $user:$user /home/$user/.ssh
+if [ -z "$key" ]; then
+	exit 0
+fi
+if ! [ -r "$key" ]; then
+	echo "error: key not found $key"
+	exit 1
+fi
+mkdir -p "/home/$user/.ssh"
+touch "/home/$user/.ssh/authorized_keys"
+cat "$key" >> "/home/$user/.ssh/authorized_keys"
+chmod -R go-rwx "/home/$user/.ssh"
+chown -R "$user:$user" "/home/$user/.ssh"
 echo "ssh public key $key added for $user"
-exit 0
