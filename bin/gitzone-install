@@ -20,7 +20,7 @@
 # quick script to install a new gitzone user / zones repository
 
 # first arg: username
-# secondo (optional) arg: ssh public key
+# second (optional) arg: ssh public key
 
 if [ -z "$1" ]; then
 	echo "usage: gitzone-install username [ id_rsa.pub ]";
